@@ -6,6 +6,12 @@ function NewKudos() {
   const [recipientName, setRecipientName] = useState('');
   const [message, setMessage] = useState('');
   const [errors, setErrors] = useState({});
+  const validateForm = () => {
+    const newErrors = {};
+    if (!recipientName.trim()) newErrors.recipientName = 'Please enter a recipient name.';
+    if (message.trim().length < 10) newErrors.message = 'Message must be at least 10 characters long.';
+    return newErrors;
+  };
   const handleSubmit = (event) => {
     event.preventDefault();
 
@@ -64,11 +70,7 @@ function NewKudos() {
                 placeholder="Who deserves recognition?"
               />
               {errors.recipientName && (
-<<<<<<< HEAD
-                <p className="mt-2 text-sm text-red-600">{errors.recipientName}</p>
-=======
                 <p className="text-red-500 text-sm font-semibold mt-2">{errors.recipientName}</p>
->>>>>>> 452ebda7abfb2e8c55212dd11bd1eceafc6bd7c8
               )}
             </div>
 
@@ -89,11 +91,6 @@ function NewKudos() {
                 }`}
                 placeholder="Express your appreciation..."
               />
-<<<<<<< HEAD
-              {errors.message && (
-                <p className="mt-2 text-sm text-red-600">{errors.message}</p>
-              )}
-=======
               <div className="flex justify-between items-center mt-2">
                 <div>
                   {errors.message && (
@@ -104,7 +101,6 @@ function NewKudos() {
                   {message.length}/10
                 </p>
               </div>
->>>>>>> 452ebda7abfb2e8c55212dd11bd1eceafc6bd7c8
             </div>
 
             <button
