@@ -6,40 +6,11 @@ function NewKudos() {
   const [recipientName, setRecipientName] = useState('');
   const [message, setMessage] = useState('');
   const [errors, setErrors] = useState({});
-<<<<<<< HEAD
-=======
-
-  const validateForm = () => {
-    const newErrors = {};
-
-    if (!recipientName.trim()) {
-      newErrors.recipientName = 'Name is required';
-    }
-
-    if (message.length < 10) {
-      newErrors.message = 'Message must be at least 10 characters long';
-    }
-
-    return newErrors;
-  };
->>>>>>> 452ebda7abfb2e8c55212dd11bd1eceafc6bd7c8
-
   const handleSubmit = (event) => {
     event.preventDefault();
 
-<<<<<<< HEAD
-    const trimmedName = recipientName.trim();
-    const trimmedMessage = message.trim();
-
-    const newErrors = {};
-    if (!trimmedName) newErrors.recipientName = 'Please enter a recipient name.';
-    if (!trimmedMessage) newErrors.message = 'Please enter a message.';
-
-    if (Object.keys(newErrors).length) {
-=======
     const newErrors = validateForm();
     if (Object.keys(newErrors).length > 0) {
->>>>>>> 452ebda7abfb2e8c55212dd11bd1eceafc6bd7c8
       setErrors(newErrors);
       return;
     }
@@ -50,8 +21,8 @@ function NewKudos() {
     const kudosArray = savedKudos ? JSON.parse(savedKudos) : [];
 
     kudosArray.push({
-      name: recipientName,
-      message: message
+      name: recipientName.trim(),
+      message: message.trim()
     });
 
     localStorage.setItem('kudosList', JSON.stringify(kudosArray));
