@@ -5,9 +5,24 @@ function NewKudos() {
   const navigate = useNavigate();
   const [recipientName, setRecipientName] = useState('');
   const [message, setMessage] = useState('');
+  const [errors, setErrors] = useState({});
 
   const handleSubmit = (event) => {
     event.preventDefault();
+
+    const trimmedName = recipientName.trim();
+    const trimmedMessage = message.trim();
+
+    const newErrors = {};
+    if (!trimmedName) newErrors.recipientName = 'Please enter a recipient name.';
+    if (!trimmedMessage) newErrors.message = 'Please enter a message.';
+
+    if (Object.keys(newErrors).length) {
+      setErrors(newErrors);
+      return;
+    }
+
+    setErrors({});
 
     const savedKudos = localStorage.getItem('kudosList');
     const kudosArray = savedKudos ? JSON.parse(savedKudos) : [];
@@ -53,6 +68,9 @@ function NewKudos() {
                 className="w-full px-5 py-4 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-4 focus:ring-indigo-300 focus:border-indigo-500 text-lg"
                 placeholder="Who deserves recognition?"
               />
+              {errors.recipientName && (
+                <p className="mt-2 text-sm text-red-600">{errors.recipientName}</p>
+              )}
             </div>
 
             <div>
@@ -70,6 +88,9 @@ function NewKudos() {
                 className="w-full px-5 py-4 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-4 focus:ring-indigo-300 focus:border-indigo-500 resize-none text-lg"
                 placeholder="Express your appreciation..."
               />
+              {errors.message && (
+                <p className="mt-2 text-sm text-red-600">{errors.message}</p>
+              )}
             </div>
 
             <button
