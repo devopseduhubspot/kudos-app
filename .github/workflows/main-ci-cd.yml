@@ -39,7 +39,7 @@ jobs:
         run: npm run build --if-present
 
       - name: Test
-        run: npm test -- --run
+        run: npm test -- --run --environment jsdom
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
