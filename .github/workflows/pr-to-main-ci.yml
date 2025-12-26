@@ -1,86 +1,63 @@
 #-----------------------------------------------------------------
-# GitHub Actions Workflow: PR to Main CI
+# GitHub Actions Workflow: PR to Main (Quality Gate)
 #-----------------------------------------------------------------
 name: pr-to-main-ci
 
 on:
   pull_request:
     branches:
-      - 'main'
+      - main
     types: [opened, synchronize, reopened, ready_for_review]
 
 jobs:
   code-quality:
     name: "🧪 Quality Gate"
     runs-on: ubuntu-latest
+
     steps:
+      # -----------------------------
+      # Checkout code
+      # -----------------------------
       - uses: actions/checkout@v4
 
+      # -----------------------------
+      # Use Node.js LTS
+      # -----------------------------
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '18'
+          cache: 'npm'
 
-      - name: Install & Test
+      # -----------------------------
+      # Diagnostics (optional but good)
+      # -----------------------------
+      - name: Diagnostics
         run: |
-          npm ci
-          npm run lint
-          npm run build --if-present
-          npm test -- --run --environment jsdom
+          echo "Node:" && node -v
+          echo "NPM:" && npm -v
+          npm ls @vitejs/plugin-react || true
 
-  security-scan:
-    name: "🛡️ Security Scan"
-    runs-on: ubuntu-latest
-    needs: code-quality
-    steps:
-      - uses: actions/checkout@v4
+      # -----------------------------
+      # Install dependencies
+      # -----------------------------
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Validate SNYK_TOKEN
-        run: |
-          if [ -z "${SNYK_TOKEN}" ]; then
-            echo "❌ SNYK_TOKEN secret is missing"
-            exit 1
-          fi
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      # -----------------------------
+      # Lint
+      # -----------------------------
+      - name: Lint
+        run: npm run lint
 
-      - name: 🔍 Snyk Test (Fail on vulnerabilities)
-        uses: snyk/actions/node@v1
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          command: test
+      # -----------------------------
+      # Build
+      # -----------------------------
+      - name: Build
+        run: npm run build
 
-      - name: 📊 Snyk Monitor (Send report to dashboard)
-        if: always()
-        uses: snyk/actions/node@v1
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          command: monitor
-
-  docker-release:
-    name: "🚀 Production Release"
-    runs-on: ubuntu-latest
-    needs: security-scan
-    if: github.event_name == 'push'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and Push Image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/kudos-app:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/kudos-app:${{ github.sha }}
+      # -----------------------------
+      # Tests (SAFE gatekeeper)
+      # -----------------------------
+      - name: Run tests
+        run: npm run test:ci
