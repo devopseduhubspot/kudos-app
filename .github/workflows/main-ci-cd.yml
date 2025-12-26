@@ -13,108 +13,141 @@ permissions:
 
 jobs:
   install:
-    name: Install Dependencies
+    name: "📦 Install Dependencies"
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: "🔁 Checkout"
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: "⚙️ Set up Node.js"
         uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: "📥 Install dependencies"
         run: npm ci
 
   lint:
-    name: Lint
+    name: "🔍 Lint"
     runs-on: ubuntu-latest
     needs: install
     steps:
-      - name: Checkout
+      - name: "🔁 Checkout"
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: "⚙️ Set up Node.js"
         uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: "📥 Install dependencies"
         run: npm ci
 
-      - name: Lint
+      - name: "🧹 Lint"
         run: npm run lint
 
   test:
-    name: Test (CI)
+    name: "🧪 Test (CI)"
     runs-on: ubuntu-latest
     needs: lint
     steps:
-      - name: Checkout
+      - name: "🔁 Checkout"
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: "⚙️ Set up Node.js"
         uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: "📥 Install dependencies"
         run: npm ci
 
-      - name: Run tests
+      - name: "🧪 Run tests"
         run: npm run test:ci
 
+  security-scan:
+    name: "🛡️ Security Scan"
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: "🔁 Checkout"
+        uses: actions/checkout@v4
+
+      - name: "🔐 Validate SNYK_TOKEN"
+        run: |
+          if [ -z "$SNYK_TOKEN" ]; then
+            echo "❌ SNYK_TOKEN secret is missing"
+            exit 1
+          fi
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      - name: "🔍 Snyk Test (Fail on vulnerabilities)"
+        uses: snyk/actions/node@v1
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: test
+
+      - name: "📊 Snyk Monitor (Send report to dashboard)"
+        if: always()
+        uses: snyk/actions/node@v1
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: monitor
+
   build:
-    name: Build
+    name: "🏗️ Build"
     runs-on: ubuntu-latest
     needs: test
     steps:
-      - name: Checkout
+      - name: "🔁 Checkout"
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: "⚙️ Set up Node.js"
         uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: "📥 Install dependencies"
         run: npm ci
 
-      - name: Build
+      - name: "🏗️ Build"
         run: npm run build
 
-      - name: Upload build artifact
+      - name: "📦 Upload build artifact"
         uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist
 
   docker:
-    name: Build & Push Docker Image
+    name: "🐳 Build & Push Docker Image"
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Checkout
+      - name: "🔁 Checkout"
         uses: actions/checkout@v4
 
-      - name: Set up QEMU
+      - name: "🧩 Set up QEMU"
         uses: docker/setup-qemu-action@v2
 
-      - name: Set up Docker Buildx
+      - name: "🧰 Set up Docker Buildx"
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
+      - name: "🔐 Log in to Docker Hub"
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and push Docker image
+      - name: "🚀 Build and push Docker image"
         uses: docker/build-push-action@v5
         with:
           context: .
