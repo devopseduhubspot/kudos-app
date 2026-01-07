@@ -161,10 +161,10 @@ jobs:
       - name: Pull & Retag Image
         run: |
           docker pull ${{ secrets.DOCKER_USERNAME }}/kudos-app:latest
-          docker tag ${{ secrets.DOCKER_USERNAME }}/kudos-app:latest kudos-app:dev
+          docker tag ${{ secrets.DOCKER_USERNAME }}/kudos-app:latest kudos-app:1.1
 
       - name: Load Image into KIND
-        run: kind load docker-image kudos-app:dev --name ci-cluster
+        run: kind load docker-image kudos-app:1.1 --name ci-cluster
 
       - name: Deploy Kubernetes Manifests
         run: kubectl apply -k k8s/
