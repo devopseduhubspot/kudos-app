@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kudos-frontend
+  labels:
+    app: kudos-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kudos-frontend
+  template:
+    metadata:
+      labels:
+        app: kudos-frontend
+    spec:
+      containers:
+        - name: kudos-frontend
+          image: docker.io/library/kudos-app:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
