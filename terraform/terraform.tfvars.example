@@ -1,0 +1,7 @@
+# Simple Configuration File
+# This is the only file you might want to change
+
+# Your application name (will be used for all resources)
+app_name = "kudos-app"
+
+# That's it! Everything else uses good defaults.
