@@ -1,0 +1,99 @@
+===============================================================================
+                           DEPLOYMENT REPORT
+===============================================================================
+
+Deployment Information:
+-----------------------
+Application Name: {{ app_name }}
+Environment: {{ node_env }}
+Target Host: {{ inventory_hostname }}
+Deployment User: {{ app_user }}
+Deployment Time: {{ ansible_date_time.iso8601 }}
+Deployment Method: Ansible Automation
+
+Application Configuration:
+--------------------------
+Application Port: {{ app_port }}
+Application Directory: {{ app_directory }}
+Node.js Environment: {{ node_env }}
+Log Level: {{ log_level }}
+
+Server Information:
+-------------------
+Operating System: {{ ansible_os_family }} {{ ansible_distribution }} {{ ansible_distribution_version }}
+Kernel Version: {{ ansible_kernel }}
+Architecture: {{ ansible_architecture }}
+CPU Cores: {{ ansible_processor_vcpus }}
+Total Memory: {{ ansible_memtotal_mb }}MB
+Available Memory: {{ ansible_memfree_mb }}MB
+
+Network Configuration:
+----------------------
+Hostname: {{ ansible_hostname }}
+FQDN: {{ ansible_fqdn }}
+Default IPv4: {{ ansible_default_ipv4.address }}
+Public IP: {{ inventory_hostname }}
+Network Interface: {{ ansible_default_ipv4.interface }}
+
+Service Status:
+---------------
+Nginx Status: Active
+Application Status: Running (PM2)
+Health Check URL: http://{{ inventory_hostname }}:{{ app_port }}
+External Access URL: http://{{ inventory_hostname }}
+
+Security Information:
+---------------------
+SSH Access: Configured
+Firewall Status: Configured
+SSL Certificate: Not Configured (HTTP only)
+File Permissions: Properly set
+
+Monitoring & Logging:
+---------------------
+Application Logs: /var/log/{{ app_name }}/
+Nginx Access Logs: /var/log/nginx/{{ app_name }}_access.log
+Nginx Error Logs: /var/log/nginx/{{ app_name }}_error.log
+PM2 Process Manager: Active
+CloudWatch Agent: Installed
+
+Performance Optimization:
+-------------------------
+Nginx Gzip: Enabled
+Static File Caching: Configured
+Process Management: PM2 Cluster Mode
+Connection Pooling: Enabled
+Load Balancing: AWS Application Load Balancer
+
+Backup & Recovery:
+------------------
+Application Source: Git Repository
+Configuration Backup: Nginx configs backed up
+Database Backup: Not Applicable
+Recovery Procedure: Ansible playbook re-run
+
+Next Steps:
+-----------
+1. Verify application is accessible via load balancer
+2. Configure SSL certificate for HTTPS
+3. Set up monitoring alerts
+4. Configure log rotation
+5. Plan regular updates and maintenance
+
+Troubleshooting:
+----------------
+Check Application Status: sudo -u {{ app_user }} pm2 status
+View Application Logs: sudo -u {{ app_user }} pm2 logs {{ app_name }}
+Check Nginx Status: systemctl status nginx
+View Nginx Logs: tail -f /var/log/nginx/{{ app_name }}_error.log
+Test Application: curl http://localhost:{{ app_port }}
+
+Contact Information:
+--------------------
+Deployed by: Ansible Automation
+Deployment Script: {{ playbook_dir }}/deploy-app.yml
+Support: DevOps Team
+
+===============================================================================
+                        DEPLOYMENT COMPLETED SUCCESSFULLY
+===============================================================================

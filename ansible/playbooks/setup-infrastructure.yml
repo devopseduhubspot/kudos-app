@@ -1,0 +1,233 @@
+---
+# ==============================================================================
+# INFRASTRUCTURE SETUP PLAYBOOK
+# ==============================================================================
+# This playbook prepares EC2 instances for application deployment
+# Demonstrates infrastructure configuration management with Ansible
+# ==============================================================================
+
+- name: "🛠️  Setup Infrastructure for Kudos App"
+  hosts: webservers
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    # System Configuration
+    timezone: "UTC"
+    ntp_servers:
+      - "0.amazon.pool.ntp.org"
+      - "1.amazon.pool.ntp.org"
+    
+    # Security Configuration
+    ssh_port: 22
+    fail2ban_enabled: true
+    firewall_enabled: true
+    
+    # Monitoring Configuration
+    cloudwatch_agent: true
+    log_retention_days: 30
+    
+    # Performance Tuning
+    swap_size_mb: 1024
+    file_descriptors_limit: 65536
+
+  tasks:
+    # System Configuration
+    - name: "⏰ Set system timezone"
+      timezone:
+        name: "{{ timezone }}"
+      tags: ['system']
+
+    - name: "🕒 Install and configure NTP"
+      yum:
+        name: chrony
+        state: present
+      tags: ['system']
+
+    - name: "⚙️  Configure chrony NTP"
+      template:
+        src: templates/chrony.conf.j2
+        dest: /etc/chrony.conf
+        backup: yes
+      notify: restart chronyd
+      tags: ['system']
+
+    - name: "🔄 Start and enable chronyd"
+      systemd:
+        name: chronyd
+        state: started
+        enabled: yes
+      tags: ['system']
+
+    # Security Hardening
+    - name: "🛡️  Install security packages"
+      yum:
+        name:
+          - fail2ban
+          - iptables-services
+          - policycoreutils-python-utils
+        state: present
+      tags: ['security']
+
+    - name: "🔒 Configure fail2ban"
+      template:
+        src: templates/jail.local.j2
+        dest: /etc/fail2ban/jail.local
+      notify: restart fail2ban
+      when: fail2ban_enabled
+      tags: ['security']
+
+    - name: "🔄 Start and enable fail2ban"
+      systemd:
+        name: fail2ban
+        state: started
+        enabled: yes
+      when: fail2ban_enabled
+      tags: ['security']
+
+    # Performance Optimization
+    - name: "💽 Configure swap file"
+      block:
+        - name: "📁 Create swap file"
+          command: dd if=/dev/zero of=/swapfile bs=1M count={{ swap_size_mb }}
+          args:
+            creates: /swapfile
+
+        - name: "🔒 Set swap file permissions"
+          file:
+            path: /swapfile
+            mode: '0600'
+
+        - name: "⚙️  Format swap file"
+          command: mkswap /swapfile
+          args:
+            creates: /swapfile
+
+        - name: "🔄 Enable swap"
+          command: swapon /swapfile
+
+        - name: "📝 Add swap to fstab"
+          lineinfile:
+            path: /etc/fstab
+            line: "/swapfile swap swap defaults 0 0"
+      tags: ['performance']
+
+    - name: "📈 Configure system limits"
+      pam_limits:
+        domain: "*"
+        limit_type: "{{ item.type }}"
+        limit_item: "{{ item.item }}"
+        value: "{{ item.value }}"
+      loop:
+        - { type: 'soft', item: 'nofile', value: "{{ file_descriptors_limit }}" }
+        - { type: 'hard', item: 'nofile', value: "{{ file_descriptors_limit }}" }
+        - { type: 'soft', item: 'nproc', value: "32768" }
+        - { type: 'hard', item: 'nproc', value: "32768" }
+      tags: ['performance']
+
+    # Monitoring Setup
+    - name: "📊 Install monitoring tools"
+      yum:
+        name:
+          - htop
+          - iotop
+          - nethogs
+          - tcpdump
+          - strace
+          - lsof
+        state: present
+      tags: ['monitoring']
+
+    - name: "☁️  Configure CloudWatch agent"
+      block:
+        - name: "📥 Download CloudWatch agent"
+          get_url:
+            url: "https://s3.amazonaws.com/amazoncloudwatch-agent/amazon_linux/amd64/latest/amazon-cloudwatch-agent.rpm"
+            dest: "/tmp/amazon-cloudwatch-agent.rpm"
+
+        - name: "📦 Install CloudWatch agent"
+          yum:
+            name: "/tmp/amazon-cloudwatch-agent.rpm"
+            state: present
+
+        - name: "⚙️  Configure CloudWatch agent"
+          template:
+            src: templates/cloudwatch-config.json.j2
+            dest: /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+          notify: restart cloudwatch-agent
+      when: cloudwatch_agent
+      tags: ['monitoring']
+
+    # Log Management
+    - name: "📝 Configure log rotation"
+      template:
+        src: templates/logrotate.conf.j2
+        dest: /etc/logrotate.d/{{ app_name }}
+      tags: ['logging']
+
+    - name: "📁 Create application log directory"
+      file:
+        path: "/var/log/{{ app_name }}"
+        state: directory
+        owner: ec2-user
+        group: ec2-user
+        mode: '0755'
+      tags: ['logging']
+
+    # Firewall Configuration
+    - name: "🔥 Configure iptables rules"
+      template:
+        src: templates/iptables.rules.j2
+        dest: /etc/sysconfig/iptables
+      notify: restart iptables
+      when: firewall_enabled
+      tags: ['security']
+
+    # System Information
+    - name: "📋 Gather system information"
+      setup:
+      register: system_facts
+      tags: ['info']
+
+    - name: "📊 Display system summary"
+      debug:
+        msg:
+          - "🖥️  Hostname: {{ ansible_hostname }}"
+          - "💻 OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "🧠 CPU: {{ ansible_processor_vcpus }} cores"
+          - "💾 Memory: {{ ansible_memtotal_mb }}MB"
+          - "💽 Disk: {{ ansible_devices.xvda.size }}"
+          - "🌐 IP: {{ ansible_default_ipv4.address }}"
+      tags: ['info']
+
+  handlers:
+    - name: restart chronyd
+      systemd:
+        name: chronyd
+        state: restarted
+
+    - name: restart fail2ban
+      systemd:
+        name: fail2ban
+        state: restarted
+
+    - name: restart iptables
+      systemd:
+        name: iptables
+        state: restarted
+
+    - name: restart cloudwatch-agent
+      systemd:
+        name: amazon-cloudwatch-agent
+        state: restarted
+
+  post_tasks:
+    - name: "✅ Infrastructure setup completed"
+      debug:
+        msg:
+          - "🎉 Infrastructure setup completed successfully!"
+          - "🔒 Security: Hardened with fail2ban and firewall"
+          - "📊 Monitoring: CloudWatch agent configured"
+          - "⚡ Performance: Optimized with swap and limits"
+          - "📝 Logging: Configured with rotation"
+      tags: ['info']

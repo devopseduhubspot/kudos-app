@@ -1,0 +1,270 @@
+---
+# ==============================================================================
+# MAIN PLAYBOOK - DEPLOY KUDOS APP TO EC2
+# ==============================================================================
+# This playbook demonstrates complete application deployment using Ansible
+# Perfect for teaching DevOps configuration management concepts
+# ==============================================================================
+
+- name: "🚀 Deploy Kudos App to EC2 Instances"
+  hosts: webservers
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    # Application Configuration
+    app_name: "kudos-app"
+    app_port: 3000
+    app_directory: "/opt/{{ app_name }}"
+    app_user: "ec2-user"
+    app_repository: "https://github.com/YOUR_USERNAME/kudos-app.git"  # Update this
+    node_version: "18.x"
+    
+    # Nginx Configuration
+    nginx_server_name: "{{ inventory_hostname }}"
+    nginx_client_max_body_size: "10M"
+    
+    # Environment Variables
+    node_env: "production"
+    log_level: "info"
+    
+    # Health Check
+    health_check_url: "http://localhost:{{ app_port }}"
+    health_check_retries: 5
+    health_check_delay: 10
+
+  # Pre-tasks - Validation and preparation
+  pre_tasks:
+    - name: "📋 Display deployment information"
+      debug:
+        msg:
+          - "🎯 Deploying: {{ app_name }}"
+          - "🖥️  Target Host: {{ inventory_hostname }}"
+          - "🌍 Environment: {{ node_env }}"
+          - "🔢 App Port: {{ app_port }}"
+          - "📁 Directory: {{ app_directory }}"
+      tags: ['info']
+
+    - name: "🔍 Verify system requirements"
+      assert:
+        that:
+          - ansible_os_family == "RedHat"
+          - ansible_python_version.split('.')[0]|int >= 3
+        fail_msg: "System requirements not met"
+        success_msg: "✅ System requirements validated"
+      tags: ['validation']
+
+    - name: "⏰ Record deployment start time"
+      set_fact:
+        deployment_start_time: "{{ ansible_date_time.iso8601 }}"
+      tags: ['info']
+
+  # Main deployment tasks
+  tasks:
+    # System Preparation
+    - name: "📦 Update system packages"
+      yum:
+        name: "*"
+        state: latest
+        update_cache: yes
+      tags: ['system']
+
+    - name: "🔧 Install system dependencies"
+      yum:
+        name:
+          - git
+          - curl
+          - wget
+          - unzip
+          - htop
+          - tree
+          - nginx
+        state: present
+      tags: ['system']
+
+    # Node.js Installation
+    - name: "📥 Download Node.js repository setup"
+      get_url:
+        url: "https://rpm.nodesource.com/setup_{{ node_version }}"
+        dest: "/tmp/nodejs_setup.sh"
+        mode: '0755'
+      tags: ['nodejs']
+
+    - name: "⚙️  Setup Node.js repository"
+      shell: /tmp/nodejs_setup.sh
+      args:
+        creates: /etc/yum.repos.d/nodesource-el7.repo
+      tags: ['nodejs']
+
+    - name: "📦 Install Node.js"
+      yum:
+        name: nodejs
+        state: present
+      tags: ['nodejs']
+
+    - name: "🌐 Install PM2 globally"
+      npm:
+        name: pm2
+        global: yes
+        state: present
+      tags: ['nodejs']
+
+    # Application Deployment
+    - name: "📁 Create application directory"
+      file:
+        path: "{{ app_directory }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0755'
+      tags: ['app']
+
+    - name: "📥 Clone application repository"
+      git:
+        repo: "{{ app_repository }}"
+        dest: "{{ app_directory }}"
+        version: main
+        force: yes
+      become_user: "{{ app_user }}"
+      tags: ['app']
+      # Note: This will fail if repository URL is not updated
+
+    - name: "📦 Install application dependencies"
+      npm:
+        path: "{{ app_directory }}"
+        state: present
+        production: yes
+      become_user: "{{ app_user }}"
+      tags: ['app']
+
+    - name: "🏗️  Build application (if needed)"
+      npm:
+        path: "{{ app_directory }}"
+        script: build
+      become_user: "{{ app_user }}"
+      ignore_errors: yes  # Some apps don't have build script
+      tags: ['app']
+
+    # Application Configuration
+    - name: "⚙️  Create application environment file"
+      template:
+        src: templates/app.env.j2
+        dest: "{{ app_directory }}/.env"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0640'
+      tags: ['config']
+
+    - name: "🔧 Create PM2 ecosystem file"
+      template:
+        src: templates/ecosystem.config.js.j2
+        dest: "{{ app_directory }}/ecosystem.config.js"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0644'
+      tags: ['config']
+
+    # Service Configuration
+    - name: "🔧 Configure Nginx for the application"
+      template:
+        src: templates/nginx.conf.j2
+        dest: /etc/nginx/conf.d/{{ app_name }}.conf
+        backup: yes
+      notify:
+        - restart nginx
+        - reload nginx
+      tags: ['nginx']
+
+    - name: "🚫 Remove default Nginx configuration"
+      file:
+        path: /etc/nginx/nginx.conf.default
+        state: absent
+      tags: ['nginx']
+
+    # Service Management
+    - name: "🔄 Start and enable Nginx"
+      systemd:
+        name: nginx
+        state: started
+        enabled: yes
+      tags: ['services']
+
+    - name: "🚀 Start application with PM2"
+      shell: |
+        cd {{ app_directory }}
+        pm2 start ecosystem.config.js
+        pm2 save
+        pm2 startup systemd -u {{ app_user }} --hp /home/{{ app_user }}
+      become_user: "{{ app_user }}"
+      tags: ['app']
+
+    # Health Checks
+    - name: "🏥 Wait for application to be ready"
+      uri:
+        url: "{{ health_check_url }}"
+        method: GET
+        status_code: 200
+      register: health_check
+      until: health_check.status == 200
+      retries: "{{ health_check_retries }}"
+      delay: "{{ health_check_delay }}"
+      tags: ['health']
+
+    - name: "✅ Display deployment success"
+      debug:
+        msg:
+          - "🎉 Deployment completed successfully!"
+          - "🌐 Application URL: http://{{ inventory_hostname }}"
+          - "📊 Health Check: {{ health_check.status }}"
+          - "⏱️  Started at: {{ deployment_start_time }}"
+          - "✅ Completed at: {{ ansible_date_time.iso8601 }}"
+      tags: ['info']
+
+  # Handlers for service management
+  handlers:
+    - name: restart nginx
+      systemd:
+        name: nginx
+        state: restarted
+
+    - name: reload nginx
+      systemd:
+        name: nginx
+        state: reloaded
+
+    - name: restart app
+      shell: |
+        cd {{ app_directory }}
+        pm2 restart {{ app_name }}
+      become_user: "{{ app_user }}"
+
+  # Post-tasks - Cleanup and reporting
+  post_tasks:
+    - name: "🧹 Clean up temporary files"
+      file:
+        path: /tmp/nodejs_setup.sh
+        state: absent
+      tags: ['cleanup']
+
+    - name: "📊 Generate deployment report"
+      template:
+        src: templates/deployment_report.txt.j2
+        dest: "/var/log/{{ app_name }}_deployment_{{ ansible_date_time.date }}.log"
+        mode: '0644'
+      tags: ['reporting']
+
+    - name: "🔍 Display system status"
+      shell: |
+        echo "=== System Status ==="
+        systemctl status nginx --no-pager -l
+        echo "=== PM2 Status ==="
+        sudo -u {{ app_user }} pm2 status
+        echo "=== Application Logs ==="
+        sudo -u {{ app_user }} pm2 logs {{ app_name }} --lines 10
+      register: system_status
+      tags: ['info']
+
+    - name: "📋 Show system status"
+      debug:
+        var: system_status.stdout_lines
+      tags: ['info']
