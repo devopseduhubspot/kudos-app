@@ -9,6 +9,7 @@ resource "aws_vpc" "main" {
 
   tags = {
     Name = "${var.app_name}-vpc"  # Give it a nice name
+    "kubernetes.io/cluster/${var.app_name}" = "shared"
   }
 }
 
@@ -32,6 +33,7 @@ resource "aws_subnet" "public" {
 
   tags = {
     Name = "${var.app_name}-public-subnet-${count.index + 1}"
+    "kubernetes.io/cluster/${var.app_name}" = "shared"
     "kubernetes.io/role/elb" = "1"  # Tell EKS this is for load balancers
   }
 }
@@ -47,6 +49,7 @@ resource "aws_subnet" "private" {
   tags = {
     Name = "${var.app_name}-private-subnet-${count.index + 1}"
     "kubernetes.io/cluster/${var.app_name}" = "owned"  # Tell EKS this is for the cluster
+    "kubernetes.io/role/internal-elb" = "1"
   }
 }
 
