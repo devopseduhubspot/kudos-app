@@ -24,13 +24,13 @@ on:
         default: 'latest'
         type: string
 
-  # Automatic trigger on main branch push
-  push:
-    branches: [ main ]
-    paths-ignore:
-      - '**.md'
-      - '.github/**'
-      - 'terraform/**'
+  # Automatic trigger on main branch push has been disabled for manual deployments only
+#   push:
+#     branches: [ main ]
+#     paths-ignore:
+#       - '**.md'
+#       - '.github/**'
+#       - 'terraform/**'
 
 env:
   AWS_REGION: us-east-1
