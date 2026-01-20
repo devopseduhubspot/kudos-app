@@ -25,12 +25,12 @@ on:
         type: string
 
   # Automatic trigger on main branch push
-#   push:
-#     branches: [ main ]
-#     paths-ignore:
-#       - '**.md'
-#       - '.github/**'
-#       - 'terraform/**'
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - '.github/**'
+      - 'terraform/**'
 
 env:
   AWS_REGION: us-east-1
@@ -134,7 +134,10 @@ jobs:
 
       - name: ☸️ Deploy to Kubernetes
         run: |
-          kubectl apply -f k8s/
+          # Use kustomize to build and apply manifests
+          kubectl apply -k k8s/
+          
+          # Wait for deployment to complete
           kubectl rollout status deployment/kudos-frontend --timeout=300s
 
       - name: 🔍 Get Service Info
