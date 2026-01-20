@@ -33,7 +33,7 @@ resource "aws_eks_cluster" "main" {
 
   # Tell it which network to use
   vpc_config {
-    subnet_ids = concat(aws_subnet.public[*].id, aws_subnet.private[*].id)
+    subnet_ids = aws_subnet.public[*].id  # Use public subnets only
   }
 
   # Wait for the role to be ready
@@ -84,15 +84,15 @@ resource "aws_eks_node_group" "main" {
   cluster_name    = aws_eks_cluster.main.name
   node_group_name = "${var.app_name}-nodes"
   node_role_arn   = aws_iam_role.eks_nodes.arn
-  subnet_ids      = aws_subnet.private[*].id  # Put them in private subnets for security
+  subnet_ids      = aws_subnet.public[*].id   # Use public subnets - simpler and cheaper
 
   # Configure the computers
-  instance_types = ["t3.medium"]  # Medium-sized computers (2 CPU, 4GB RAM)
+  instance_types = ["t3.small"]   # Small computers (2 CPU, 2GB RAM) - cost effective
 
   # How many computers do we want?
   scaling_config {
-    desired_size = 2  # We want 2 computers
-    max_size     = 3  # Never more than 3
+    desired_size = 1  # We want 1 computer (cost effective)
+    max_size     = 2  # Never more than 2
     min_size     = 1  # At least 1
   }
 

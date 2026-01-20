@@ -3,11 +3,10 @@ kind: Service
 metadata:
   name: kudos-frontend
 spec:
-  type: NodePort
+  type: LoadBalancer  # This creates an AWS load balancer for external access
   selector:
     app: kudos-frontend
   ports:
     - protocol: TCP
       port: 80
       targetPort: 80
-      nodePort: 30080

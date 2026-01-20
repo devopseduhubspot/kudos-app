@@ -16,8 +16,8 @@ spec:
     spec:
       containers:
         - name: kudos-frontend
-          image: docker.io/library/kudos-app:1.1
-          imagePullPolicy: IfNotPresent
+          image: 036983629554.dkr.ecr.us-east-1.amazonaws.com/kudos-app:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 80
           resources:

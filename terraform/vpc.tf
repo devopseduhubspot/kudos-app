@@ -24,7 +24,7 @@ resource "aws_internet_gateway" "main" {
 
 # 3. Create Public Subnets - These can access the internet directly
 resource "aws_subnet" "public" {
-  count = 2  # Create 2 subnets for reliability
+  count = 2  # Create 2 subnets in different AZs (required by EKS)
 
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "10.0.${count.index + 1}.0/24"  # Network addresses
@@ -38,22 +38,7 @@ resource "aws_subnet" "public" {
   }
 }
 
-# 4. Create Private Subnets - These are hidden from the internet (more secure)
-resource "aws_subnet" "private" {
-  count = 2  # Create 2 subnets for reliability
-
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.${count.index + 10}.0/24"  # Different network addresses
-  availability_zone = data.aws_availability_zones.available.names[count.index]
-
-  tags = {
-    Name = "${var.app_name}-private-subnet-${count.index + 1}"
-    "kubernetes.io/cluster/${var.app_name}" = "owned"  # Tell EKS this is for the cluster
-    "kubernetes.io/role/internal-elb" = "1"
-  }
-}
-
-# 5. Create Route Table - This is like a GPS for network traffic
+# 4. Create Route Table - This is like a GPS for network traffic
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 
@@ -67,7 +52,7 @@ resource "aws_route_table" "public" {
   }
 }
 
-# 6. Connect the public subnets to the route table
+# 5. Connect the public subnets to the route table
 resource "aws_route_table_association" "public" {
   count = 2
 
