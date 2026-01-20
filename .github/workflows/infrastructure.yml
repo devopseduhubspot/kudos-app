@@ -1,0 +1,172 @@
+name: 🏗️ Infrastructure Management
+
+on:
+  # Manual trigger with input options
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Terraform Action'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+      environment:
+        description: 'Environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      auto_approve:
+        description: 'Auto-approve (apply/destroy only)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  TF_VAR_app_name: kudos-app-${{ github.event.inputs.environment }}
+  AWS_REGION: us-east-1
+
+jobs:
+  terraform:
+    name: 🚀 Terraform ${{ github.event.inputs.action }}
+    runs-on: ubuntu-latest
+    
+    # Use environment for additional protection
+    environment: ${{ github.event.inputs.environment }}
+    
+    defaults:
+      run:
+        working-directory: terraform
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ~1.7.0
+
+      - name: 🔐 Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 🔍 Terraform Format Check
+        run: terraform fmt -check -recursive
+        continue-on-error: true
+
+      - name: 🎯 Terraform Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TERRAFORM_STATE_BUCKET }}" \
+            -backend-config="key=kudos-app/${{ github.event.inputs.environment }}/terraform.tfstate" \
+            -backend-config="region=${{ env.AWS_REGION }}"
+
+      - name: 🔍 Terraform Validate
+        run: terraform validate
+
+      - name: 📊 Terraform Plan
+        id: plan
+        run: |
+          terraform plan -no-color -out=tfplan
+        continue-on-error: true
+
+      - name: 📝 Update PR with Plan
+        if: github.event_name == 'pull_request' && steps.plan.outcome == 'success'
+        uses: actions/github-script@v7
+        env:
+          PLAN: ${{ steps.plan.outputs.stdout }}
+        with:
+          script: |
+            const output = `#### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
+            #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
+            #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
+            #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
+            
+            <details><summary>Show Plan</summary>
+            
+            \`\`\`terraform
+            ${process.env.PLAN}
+            \`\`\`
+            
+            </details>
+            
+            *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+
+      - name: ✅ Terraform Apply
+        if: github.event.inputs.action == 'apply' && steps.plan.outcome == 'success'
+        run: |
+          if [ "${{ github.event.inputs.auto_approve }}" == "true" ]; then
+            terraform apply -auto-approve tfplan
+          else
+            echo "⚠️ Manual approval required. Plan saved but not applied."
+            echo "To apply manually, download the artifact and run: terraform apply tfplan"
+          fi
+
+      - name: 💥 Terraform Destroy
+        if: github.event.inputs.action == 'destroy'
+        run: |
+          if [ "${{ github.event.inputs.auto_approve }}" == "true" ]; then
+            terraform destroy -auto-approve
+          else
+            echo "⚠️ Manual approval required for destroy operation."
+            echo "To destroy manually, run: terraform destroy"
+          fi
+
+      - name: 📦 Save Terraform Plan
+        if: github.event.inputs.action == 'plan' || (github.event.inputs.action == 'apply' && github.event.inputs.auto_approve != 'true')
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-${{ github.event.inputs.environment }}
+          path: terraform/tfplan
+          retention-days: 5
+
+      - name: 📊 Terraform Output
+        if: github.event.inputs.action == 'apply' && steps.plan.outcome == 'success'
+        run: terraform output -json
+
+      - name: 📝 Summary Report
+        run: |
+          echo "## 🏗️ Infrastructure Management Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Action**: ${{ github.event.inputs.action }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment**: ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Auto Approve**: ${{ github.event.inputs.auto_approve }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered By**: @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.plan.outcome }}" == "success" ]; then
+            echo "✅ Terraform plan executed successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Terraform plan failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # Optional: Notify on completion
+  notify:
+    name: 📢 Notification
+    needs: terraform
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: 📧 Send Notification
+        run: |
+          echo "Infrastructure operation completed!"
+          echo "Action: ${{ github.event.inputs.action }}"
+          echo "Environment: ${{ github.event.inputs.environment }}"
+          echo "Status: ${{ needs.terraform.result }}"
