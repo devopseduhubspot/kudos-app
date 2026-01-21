@@ -257,6 +257,9 @@ jobs:
 
       - name: "🔗 Update kubeconfig for EKS"
         run: |
+          echo "🔍 Environment: ${{ github.event.inputs.environment || 'dev' }}"
+          echo "🎯 Looking for EKS cluster: $EKS_CLUSTER_NAME"
+          echo "🌍 In region: $AWS_REGION"
           aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
           kubectl cluster-info
 
@@ -370,7 +373,11 @@ jobs:
           version: v1.29.0
 
       - name: "🔗 Update kubeconfig for EKS"
-        run: aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
+        run: |
+          echo "🔍 Environment: ${{ github.event.inputs.environment || 'dev' }}"
+          echo "🎯 Looking for EKS cluster: $EKS_CLUSTER_NAME" 
+          echo "🌍 In region: $AWS_REGION"
+          aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
 
       - name: "📊 Generate Deployment Report"
         run: |
