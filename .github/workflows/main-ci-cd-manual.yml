@@ -32,7 +32,8 @@ on:
 env:
   AWS_REGION: us-east-1
   EKS_CLUSTER_NAME: kudos-app-${{ github.event.inputs.environment || 'dev' }}
-  ECR_REPOSITORY: kudos-app-${{ github.event.inputs.environment || 'dev' }}
+  ECR_REPOSITORY_FRONTEND: kudos-app-${{ github.event.inputs.environment || 'dev' }}
+  ECR_REPOSITORY_BACKEND: kudos-app-backend-${{ github.event.inputs.environment || 'dev' }}
   IMAGE_TAG: ${{ github.sha }}
   BRANCH_NAME: ${{ github.ref_name }}
   BUILD_DATETIME: ${{ github.run_id }}-$(date +'%Y%m%d-%H%M%S')
@@ -143,7 +144,7 @@ jobs:
       - run: npm run build
 
 # ---------------------------------------------------------
-# 6. Build & Push to ECR
+# 6. Build & Push to ECR (Frontend & Backend)
 # ---------------------------------------------------------
   docker:
     name: "🐳 Build & Push to ECR"
@@ -151,8 +152,9 @@ jobs:
     needs: build
     if: always() && (needs.build.result == 'success' || github.event.inputs.mode == 'docker-only')
     outputs:
-      image-uri: ${{ steps.build-image.outputs.image }}
-      branch-datetime-tag: ${{ steps.build-image.outputs.branch-datetime-tag }}
+      frontend-image-uri: ${{ steps.build-frontend.outputs.image }}
+      backend-image-uri: ${{ steps.build-backend.outputs.image }}
+      branch-datetime-tag: ${{ steps.build-frontend.outputs.branch-datetime-tag }}
     steps:
       - name: "🔁 Checkout"
         uses: actions/checkout@v4
@@ -164,17 +166,22 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: "📦 Create ECR Repository (if not exists)"
+      - name: "📦 Create ECR Repositories (if not exists)"
         run: |
-          aws ecr describe-repositories --repository-names $ECR_REPOSITORY --region $AWS_REGION || \
-          aws ecr create-repository --repository-name $ECR_REPOSITORY --region $AWS_REGION
+          # Create frontend repository
+          aws ecr describe-repositories --repository-names $ECR_REPOSITORY_FRONTEND --region $AWS_REGION || \
+          aws ecr create-repository --repository-name $ECR_REPOSITORY_FRONTEND --region $AWS_REGION
+          
+          # Create backend repository
+          aws ecr describe-repositories --repository-names $ECR_REPOSITORY_BACKEND --region $AWS_REGION || \
+          aws ecr create-repository --repository-name $ECR_REPOSITORY_BACKEND --region $AWS_REGION
 
       - name: "🏗️ Login to Amazon ECR"
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: "🐳 Build, tag, and push image to Amazon ECR"
-        id: build-image
+      - name: "🐳 Build, tag, and push Frontend image to Amazon ECR"
+        id: build-frontend
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
@@ -183,51 +190,99 @@ jobs:
           BRANCH_CLEAN=$(echo "${{ github.ref_name }}" | sed 's/[^a-zA-Z0-9._-]/-/g')
           
           # Build and tag with multiple tags
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:${BRANCH_CLEAN}-${DATETIME_TAG} .
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:${BRANCH_CLEAN}-latest .
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG .
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:latest .
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:${BRANCH_CLEAN}-${DATETIME_TAG} .
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:${BRANCH_CLEAN}-latest .
           
           # Push all tags
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:${BRANCH_CLEAN}-${DATETIME_TAG}
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:${BRANCH_CLEAN}-latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:${BRANCH_CLEAN}-${DATETIME_TAG}
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:${BRANCH_CLEAN}-latest
           
           # Output the main image reference
-          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG" >> $GITHUB_OUTPUT
           echo "branch-datetime-tag=${BRANCH_CLEAN}-${DATETIME_TAG}" >> $GITHUB_OUTPUT
+
+      - name: "🐳 Build, tag, and push Backend image to Amazon ECR"
+        id: build-backend
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          # Generate datetime tag
+          DATETIME_TAG=$(date +'%Y%m%d-%H%M%S')
+          BRANCH_CLEAN=$(echo "${{ github.ref_name }}" | sed 's/[^a-zA-Z0-9._-]/-/g')
+          
+          # Build and tag with multiple tags using backend Dockerfile
+          docker build -f Dockerfile.backend -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG .
+          docker build -f Dockerfile.backend -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:latest .
+          docker build -f Dockerfile.backend -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:${BRANCH_CLEAN}-${DATETIME_TAG} .
+          docker build -f Dockerfile.backend -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:${BRANCH_CLEAN}-latest .
+          
+          # Push all tags
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:${BRANCH_CLEAN}-${DATETIME_TAG}
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:${BRANCH_CLEAN}-latest
+          
+          # Output the main image reference
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG" >> $GITHUB_OUTPUT
           
           # Display pushed tags
           echo "📦 Pushed Docker images with tags:"
+          echo "Frontend:"
+          echo "  • $IMAGE_TAG (commit SHA)"
+          echo "  • latest (always latest)"
+          echo "  • ${BRANCH_CLEAN}-${DATETIME_TAG} (branch + datetime)"
+          echo "  • ${BRANCH_CLEAN}-latest (branch latest)"
+          echo "Backend:"
           echo "  • $IMAGE_TAG (commit SHA)"
           echo "  • latest (always latest)"
           echo "  • ${BRANCH_CLEAN}-${DATETIME_TAG} (branch + datetime)"
           echo "  • ${BRANCH_CLEAN}-latest (branch latest)"
 
-      - name: "🔍 Scan image for vulnerabilities"
+      - name: "🔍 Scan Frontend image for vulnerabilities"
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ steps.build-image.outputs.image }}
+          image-ref: ${{ steps.build-frontend.outputs.image }}
           format: 'sarif'
-          output: 'trivy-results.sarif'
+          output: 'trivy-frontend-results.sarif'
+        continue-on-error: true
+
+      - name: "🔍 Scan Backend image for vulnerabilities"
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.build-backend.outputs.image }}
+          format: 'sarif'
+          output: 'trivy-backend-results.sarif'
         continue-on-error: true
 
       - name: "📋 Check Trivy results"
         run: |
-          if [ -f "trivy-results.sarif" ]; then
-            echo "✅ Trivy scan completed successfully"
-            echo "📊 SARIF file size: $(wc -c < trivy-results.sarif) bytes"
-          else
-            echo "⚠️  Trivy results file not found, creating empty SARIF"
-            echo '{"version":"2.1.0","runs":[]}' > trivy-results.sarif
-          fi
+          for file in trivy-frontend-results.sarif trivy-backend-results.sarif; do
+            if [ -f "$file" ]; then
+              echo "✅ $file scan completed successfully"
+              echo "📊 SARIF file size: $(wc -c < $file) bytes"
+            else
+              echo "⚠️  $file not found, creating empty SARIF"
+              echo '{"version":"2.1.0","runs":[]}' > $file
+            fi
+          done
 
-      - name: "📊 Upload Trivy scan results"
+      - name: "📊 Upload Frontend Trivy scan results"
         uses: github/codeql-action/upload-sarif@v4
-        if: always() && hashFiles('trivy-results.sarif') != ''
+        if: always() && hashFiles('trivy-frontend-results.sarif') != ''
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: 'trivy-frontend-results.sarif'
+          category: 'frontend'
+
+      - name: "📊 Upload Backend Trivy scan results"  
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-backend-results.sarif') != ''
+        with:
+          sarif_file: 'trivy-backend-results.sarif'
+          category: 'backend'
 
 # ---------------------------------------------------------
 # 7. Deploy to AWS EKS
@@ -263,16 +318,20 @@ jobs:
           aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
           kubectl cluster-info
 
-      - name: "🏗️ Update Kubernetes manifests with new image"
+      - name: "🏗️ Update Kubernetes manifests with new images"
         run: |
           # Get ECR registry dynamically
           ECR_REGISTRY=$(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_REGION.amazonaws.com
-          FULL_IMAGE_NAME=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          FRONTEND_IMAGE_NAME=$ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG
+          BACKEND_IMAGE_NAME=$ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG
           
-          echo "🔍 Using image: $FULL_IMAGE_NAME"
+          echo "🔍 Using images:"
+          echo "Frontend: $FRONTEND_IMAGE_NAME"
+          echo "Backend: $BACKEND_IMAGE_NAME"
           
-          # Update the image in deployment.yaml
-          sed -i "s|image:.*|image: $FULL_IMAGE_NAME|" k8s/deployment.yaml
+          # Update both images in deployment.yaml
+          sed -i "/kudos-frontend/{N;N;N;s|image:.*|image: $FRONTEND_IMAGE_NAME|}" k8s/deployment.yaml
+          sed -i "/kudos-backend/{N;N;N;s|image:.*|image: $BACKEND_IMAGE_NAME|}" k8s/deployment.yaml
           
           # Show what we're deploying
           echo "🔍 Updated Kubernetes manifests:"
@@ -286,17 +345,21 @@ jobs:
           # Add labels for tracking
           kubectl label deployment/kudos-frontend version=$IMAGE_TAG --overwrite
           kubectl label deployment/kudos-frontend environment=${{ github.event.inputs.environment || 'dev' }} --overwrite
+          kubectl label deployment/kudos-backend version=$IMAGE_TAG --overwrite
+          kubectl label deployment/kudos-backend environment=${{ github.event.inputs.environment || 'dev' }} --overwrite
 
       - name: "⏳ Wait for Deployment Rollout"
         run: |
-          echo "⏳ Waiting for deployment to complete..."
+          echo "⏳ Waiting for deployments to complete..."
           kubectl rollout status deployment/kudos-frontend --timeout=300s
+          kubectl rollout status deployment/kudos-backend --timeout=300s
 
       - name: "🔍 Verify Deployment"
         run: |
           echo "🔍 Checking deployment status..."
           kubectl get deployments
           kubectl get pods -l app=kudos-frontend
+          kubectl get pods -l app=kudos-backend
           kubectl get services
 
       # ---- HEALTH CHECK VALIDATION ----
@@ -304,37 +367,67 @@ jobs:
         run: |
           echo "🏥 Running application health checks..."
           
-          # Get pod details
-          POD=$(kubectl get pods -l app=kudos-frontend -o jsonpath='{.items[0].metadata.name}')
-          echo "Testing pod: $POD"
+          # Check Backend Health First
+          echo "🔍 Testing Backend Health..."
+          BACKEND_POD=$(kubectl get pods -l app=kudos-backend -o jsonpath='{.items[0].metadata.name}')
+          echo "Backend pod: $BACKEND_POD"
+          
+          # Port forward backend service for health check
+          kubectl port-forward svc/kudos-backend 3001:3001 &
+          BACKEND_PF_PID=$!
+          sleep 10
+          
+          # Test backend health endpoint
+          for i in {1..5}; do
+            BACKEND_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/health || echo "000")
+            if [ "$BACKEND_STATUS" = "200" ]; then
+              echo "✅ Backend health check passed (HTTP 200)"
+              break
+            fi
+            echo "⏳ Backend attempt $i: HTTP $BACKEND_STATUS, retrying..."
+            sleep 5
+          done
+          
+          kill $BACKEND_PF_PID 2>/dev/null || true
+          
+          if [ "$BACKEND_STATUS" != "200" ]; then
+            echo "❌ Backend health check failed"
+            kubectl logs $BACKEND_POD
+            exit 1
+          fi
+          
+          # Check Frontend Health
+          echo "🔍 Testing Frontend Health..."
+          FRONTEND_POD=$(kubectl get pods -l app=kudos-frontend -o jsonpath='{.items[0].metadata.name}')
+          echo "Frontend pod: $FRONTEND_POD"
           
           # Check if nginx is running
-          kubectl exec $POD -- ps aux | grep nginx || {
+          kubectl exec $FRONTEND_POD -- ps aux | grep nginx || {
             echo "❌ Nginx process not found"
-            kubectl logs $POD
+            kubectl logs $FRONTEND_POD
             exit 1
           }
           
-          # Check if the service is accessible
+          # Check if the frontend service is accessible
           kubectl port-forward svc/kudos-frontend 8080:80 &
-          PF_PID=$!
+          FRONTEND_PF_PID=$!
           sleep 10
           
           # Test HTTP endpoint
           for i in {1..5}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080 || echo "000")
-            if [ "$STATUS" = "200" ]; then
-              echo "✅ Health check passed (HTTP 200)"
-              kill $PF_PID 2>/dev/null || true
+            FRONTEND_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080 || echo "000")
+            if [ "$FRONTEND_STATUS" = "200" ]; then
+              echo "✅ Frontend health check passed (HTTP 200)"
+              kill $FRONTEND_PF_PID 2>/dev/null || true
               exit 0
             fi
-            echo "⏳ Attempt $i: HTTP $STATUS, retrying..."
+            echo "⏳ Frontend attempt $i: HTTP $FRONTEND_STATUS, retrying..."
             sleep 5
           done
           
-          echo "❌ Health check failed after 5 attempts"
-          kill $PF_PID 2>/dev/null || true
-          kubectl logs $POD
+          echo "❌ Frontend health check failed after 5 attempts"
+          kill $FRONTEND_PF_PID 2>/dev/null || true
+          kubectl logs $FRONTEND_POD
           exit 1
 
       - name: "📊 Deployment Summary"
@@ -353,6 +446,7 @@ jobs:
           echo ""
           echo "🔗 Service Details:"
           kubectl get service/kudos-frontend -o wide
+          kubectl get service/kudos-backend -o wide
 
 # ---------------------------------------------------------
 # 8. Post-Deployment Validation & Notifications
@@ -396,11 +490,13 @@ jobs:
           echo "## Application Status" >> deployment-report.md
           echo '```' >> deployment-report.md
           kubectl get deployment/kudos-frontend -o wide >> deployment-report.md
+          kubectl get deployment/kudos-backend -o wide >> deployment-report.md
           echo '```' >> deployment-report.md
           echo "" >> deployment-report.md
           echo "## Pods Status" >> deployment-report.md
           echo '```' >> deployment-report.md
           kubectl get pods -l app=kudos-frontend >> deployment-report.md
+          kubectl get pods -l app=kudos-backend >> deployment-report.md
           echo '```' >> deployment-report.md
 
       - name: "📧 Deployment Success Notification"

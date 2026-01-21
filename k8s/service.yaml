@@ -10,3 +10,16 @@ spec:
     - protocol: TCP
       port: 80
       targetPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kudos-backend
+spec:
+  type: ClusterIP  # Internal service for backend
+  selector:
+    app: kudos-backend
+  ports:
+    - protocol: TCP
+      port: 3001
+      targetPort: 3001
