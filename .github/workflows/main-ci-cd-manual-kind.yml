@@ -2,7 +2,7 @@
 # CI/CD Pipeline with KIND Kubernetes Validation
 # =========================================================
 
-name: main-ci-cd-manual
+name: main-ci-cd-manual-kind-local
 
 on:
   workflow_dispatch:
