@@ -3,7 +3,8 @@
 
 # Create a private repository for your Docker images
 resource "aws_ecr_repository" "app" {
-  name = var.app_name
+  name         = var.app_name
+  force_delete = true  # Allow deletion even with images
 
   tags = {
     Name = "${var.app_name}-repository"

@@ -235,3 +235,13 @@ jspm_packages/
 .yarn/install-state.gz
 .pnp.*
 
+# Temporary and backup files
+*.json.bak
+versions.json
+delete-versions.json
+ecr-images.json
+
+# Tutorial and documentation files (keep only essential ones)
+*Tutorial.md
+*tutorial.md
+

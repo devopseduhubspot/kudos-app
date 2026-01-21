@@ -45,8 +45,9 @@ aws dynamodb create-table \
   --region us-east-1
 ```
 
-### 3️⃣ Create IAM User for GitHub Actions
+### 3️⃣ Create IAM User for GitHub Actions (COMMENTED OUT - NOT NEEDED)
 
+<!-- 
 ```bash
 # Create user
 aws iam create-user --user-name github-actions-terraform
@@ -81,6 +82,7 @@ aws iam put-user-policy \
 # Create access keys
 aws iam create-access-key --user-name github-actions-terraform
 ```
+-->
 
 ### 4️⃣ Set GitHub Repository Secrets
 
@@ -90,8 +92,8 @@ Add these **Repository Secrets**:
 
 | Secret Name | Value | Description |
 |-------------|-------|-------------|
-| `AWS_ACCESS_KEY_ID` | `AKIA...` | From IAM user creation |
-| `AWS_SECRET_ACCESS_KEY` | `xxxxx...` | From IAM user creation |
+| `AWS_ACCESS_KEY_ID` | `AKIA...` | From your existing AWS credentials |
+| `AWS_SECRET_ACCESS_KEY` | `xxxxx...` | From your existing AWS credentials |
 | `TERRAFORM_STATE_BUCKET` | `your-terraform-state-bucket-kudos-app` | S3 bucket name |
 
 ### 5️⃣ Create GitHub Environments (Optional)
