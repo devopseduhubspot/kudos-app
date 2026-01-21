@@ -7,8 +7,13 @@ output "cluster_name" {
 }
 
 output "ecr_repository_url" {
-  description = "Where your Docker images are stored"
+  description = "Where your frontend Docker images are stored"
   value       = aws_ecr_repository.app.repository_url
+}
+
+output "ecr_backend_repository_url" {
+  description = "Where your backend Docker images are stored"
+  value       = aws_ecr_repository.backend.repository_url
 }
 
 output "vpc_id" {

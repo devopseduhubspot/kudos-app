@@ -168,13 +168,37 @@ jobs:
 
       - name: "📦 Create ECR Repositories (if not exists)"
         run: |
-          # Create frontend repository
-          aws ecr describe-repositories --repository-names $ECR_REPOSITORY_FRONTEND --region $AWS_REGION || \
-          aws ecr create-repository --repository-name $ECR_REPOSITORY_FRONTEND --region $AWS_REGION
+          echo "🔍 Checking ECR repositories..."
           
-          # Create backend repository
-          aws ecr describe-repositories --repository-names $ECR_REPOSITORY_BACKEND --region $AWS_REGION || \
-          aws ecr create-repository --repository-name $ECR_REPOSITORY_BACKEND --region $AWS_REGION
+          # Create frontend repository
+          echo "Frontend repository: $ECR_REPOSITORY_FRONTEND"
+          if aws ecr describe-repositories --repository-names $ECR_REPOSITORY_FRONTEND --region $AWS_REGION 2>/dev/null; then
+            echo "✅ Frontend ECR repository already exists: $ECR_REPOSITORY_FRONTEND"
+          else
+            echo "📦 Creating frontend ECR repository: $ECR_REPOSITORY_FRONTEND"
+            aws ecr create-repository --repository-name $ECR_REPOSITORY_FRONTEND --region $AWS_REGION
+            if [ $? -eq 0 ]; then
+              echo "✅ Frontend ECR repository created successfully"
+            else
+              echo "❌ Failed to create frontend ECR repository"
+              exit 1
+            fi
+          fi
+          
+          # Create backend repository  
+          echo "Backend repository: $ECR_REPOSITORY_BACKEND"
+          if aws ecr describe-repositories --repository-names $ECR_REPOSITORY_BACKEND --region $AWS_REGION 2>/dev/null; then
+            echo "✅ Backend ECR repository already exists: $ECR_REPOSITORY_BACKEND"
+          else
+            echo "📦 Creating backend ECR repository: $ECR_REPOSITORY_BACKEND"
+            aws ecr create-repository --repository-name $ECR_REPOSITORY_BACKEND --region $AWS_REGION
+            if [ $? -eq 0 ]; then
+              echo "✅ Backend ECR repository created successfully"
+            else
+              echo "❌ Failed to create backend ECR repository"
+              exit 1
+            fi
+          fi
 
       - name: "🏗️ Login to Amazon ECR"
         id: login-ecr

@@ -104,7 +104,7 @@ function New-DynamoDBTable {
 function New-ECRRepository {
     param([string]$RepoName)
     
-    Write-Host "Creating ECR repository: $RepoName..." -ForegroundColor Yellow
+    Write-Host "Checking ECR repository: $RepoName..." -ForegroundColor Yellow
     
     # Check if repository exists
     aws ecr describe-repositories --repository-names $RepoName --region $AWSRegion 2>$null
@@ -113,10 +113,12 @@ function New-ECRRepository {
         return $true
     }
     
+    Write-Host "Creating ECR repository: $RepoName..." -ForegroundColor Yellow
+    
     # Create repository
-    aws ecr create-repository --repository-name $RepoName --region $AWSRegion
+    aws ecr create-repository --repository-name $RepoName --region $AWSRegion 2>$null
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "Failed to create ECR repository" -ForegroundColor Red
+        Write-Host "Failed to create ECR repository: $RepoName" -ForegroundColor Red
         return $false
     }
     
@@ -251,7 +253,8 @@ function Invoke-Setup {
     # Generate unique bucket name
     $bucketName = "terraform-state-$ProjectName-$(Get-Random)"
     $tableName = "terraform-locks"
-    $ecrRepoName = "$ProjectName-$Environment"
+    $ecrRepoFrontend = "$ProjectName-$Environment"
+    $ecrRepoBackend = "$ProjectName-backend-$Environment"
     
     Write-Host ""
     Write-Host "Configuration:" -ForegroundColor Cyan
@@ -260,7 +263,8 @@ function Invoke-Setup {
     Write-Host "  Region: $AWSRegion" -ForegroundColor White
     Write-Host "  S3 Bucket: $bucketName" -ForegroundColor White
     Write-Host "  DynamoDB Table: $tableName" -ForegroundColor White
-    Write-Host "  ECR Repository: $ecrRepoName" -ForegroundColor White
+    Write-Host "  ECR Repository (Frontend): $ecrRepoFrontend" -ForegroundColor White
+    Write-Host "  ECR Repository (Backend): $ecrRepoBackend" -ForegroundColor White
     Write-Host ""
     
     if (-not $SkipConfirmation) {
@@ -278,9 +282,16 @@ function Invoke-Setup {
     $dynamoSuccess = New-DynamoDBTable -TableName $tableName
     if (-not $dynamoSuccess) { return }
     
-    # Create ECR repository
-    $ecrSuccess = New-ECRRepository -RepoName $ecrRepoName
-    if (-not $ecrSuccess) { return }
+    # Create ECR repositories for both frontend and backend
+    $ecrFrontendSuccess = New-ECRRepository -RepoName $ecrRepoFrontend
+    if (-not $ecrFrontendSuccess) {
+        Write-Host "Warning: Frontend ECR repository creation failed, but continuing..." -ForegroundColor Yellow
+    }
+    
+    $ecrBackendSuccess = New-ECRRepository -RepoName $ecrRepoBackend
+    if (-not $ecrBackendSuccess) {
+        Write-Host "Warning: Backend ECR repository creation failed, but continuing..." -ForegroundColor Yellow
+    }
     
     # Update backend
     Update-Backend -BucketName $bucket
@@ -298,7 +309,9 @@ function Invoke-Setup {
     $awsAccount = aws sts get-caller-identity --query 'Account' --output text 2>$null
     if ($awsAccount) {
         $ecrRegistry = "$awsAccount.dkr.ecr.$AWSRegion.amazonaws.com"
-        Write-Host "💡 Your ECR Registry URL: $ecrRegistry" -ForegroundColor Cyan
+        Write-Host "💡 Your ECR Repositories:" -ForegroundColor Cyan
+        Write-Host "   Frontend: $ecrRegistry/$ecrRepoFrontend" -ForegroundColor White
+        Write-Host "   Backend:  $ecrRegistry/$ecrRepoBackend" -ForegroundColor White
         Write-Host "   (No secret needed - GitHub Actions can retrieve this automatically)" -ForegroundColor Gray
     }
     Write-Host ""
@@ -333,16 +346,16 @@ function Invoke-Cleanup {
         }
     }
     
-    # Delete ECR repositories (all environments)
+    # Delete ECR repositories (all environments and types)
     Write-Host "Finding ECR repositories to delete..." -ForegroundColor Yellow
-    $repoList = aws ecr describe-repositories --region $AWSRegion --query "repositories[?starts_with(repositoryName, '$ProjectName-')].repositoryName" --output text 2>$null
+    $repoList = aws ecr describe-repositories --region $AWSRegion --query "repositories[?(starts_with(repositoryName, '$ProjectName-') || starts_with(repositoryName, '$ProjectName-backend-'))].repositoryName" --output text 2>$null
     if ($LASTEXITCODE -eq 0 -and $repoList) {
         $repos = $repoList -split "\s+" | Where-Object { $_ -ne "" }
         foreach ($repo in $repos) {
             Remove-ECRRepository -RepoName $repo
         }
     } else {
-        Write-Host "No ECR repositories found matching: $ProjectName-*" -ForegroundColor Yellow
+        Write-Host "No ECR repositories found matching: $ProjectName-* or $ProjectName-backend-*" -ForegroundColor Yellow
     }
     
     # Find and delete S3 buckets
