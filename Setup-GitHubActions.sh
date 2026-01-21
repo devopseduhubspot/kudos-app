@@ -27,15 +27,15 @@
 # =============================================================================
 # 
 # Setup Mode (Creates Resources):
-# ./Setup-GitHubActions.sh                       # Basic setup
-# ./Setup-GitHubActions.sh my-app                # Custom project name
-# ./Setup-GitHubActions.sh my-app us-west-2      # Custom project and region
-# ./Setup-GitHubActions.sh my-app us-west-2 true # Skip confirmations
+# ./Setup-GitHubActions.sh setup                           # Basic setup
+# ./Setup-GitHubActions.sh setup my-app                    # Custom project
+# ./Setup-GitHubActions.sh setup my-app us-west-2          # Custom project and region
+# ./Setup-GitHubActions.sh setup my-app us-west-2 true     # Skip confirmations
 # 
 # Cleanup Mode (Deletes Everything - DESTRUCTIVE):
-# ./Setup-GitHubActions.sh --cleanup             # Delete all resources
-# ./Setup-GitHubActions.sh -c                    # Short form
-# PROJECT_NAME=my-app ./Setup-GitHubActions.sh -c # Custom project cleanup
+# ./Setup-GitHubActions.sh cleanup                         # Delete all resources
+# ./Setup-GitHubActions.sh cleanup my-app                  # Custom project cleanup
+# PROJECT_NAME=my-app SKIP_CONFIRMATION=true ./Setup-GitHubActions.sh cleanup # Cleanup without prompts
 #
 # =============================================================================
 # WHAT GETS CREATED
@@ -75,6 +75,8 @@
 # - AWS_ACCESS_KEY_ID: Your AWS access key
 # - AWS_SECRET_ACCESS_KEY: Your AWS secret key  
 # - TERRAFORM_STATE_BUCKET: The S3 bucket name (script will show you this)
+# - ECR_REGISTRY: Your ECR registry URL (e.g., 036983629554.dkr.ecr.us-east-1.amazonaws.com)
+# - SNYK_TOKEN: Snyk API token for security scanning
 #
 # =============================================================================
 # WORKFLOW PROCESS
@@ -114,10 +116,16 @@
 
 set -e  # Exit on any error
 
-# Default values
-PROJECT_NAME="${1:-kudos-app}"
-AWS_REGION="${2:-us-east-1}"
-SKIP_CONFIRMATION="${3:-false}"
+# Parse command line arguments
+MODE="$1"
+PROJECT_NAME="${2:-kudos-app}"
+AWS_REGION="${3:-us-east-1}"
+SKIP_CONFIRMATION="${4:-false}"
+
+# Allow environment variables to override defaults
+PROJECT_NAME="${PROJECT_NAME:-$PROJECT_NAME}"
+AWS_REGION="${AWS_REGION:-$AWS_REGION}"
+SKIP_CONFIRMATION="${SKIP_CONFIRMATION:-$SKIP_CONFIRMATION}"
 
 echo "🚀 GitHub Actions Prerequisites Setup for $PROJECT_NAME"
 echo "======================================================="
@@ -397,119 +405,126 @@ cleanup_resources() {
 
 # Main execution function
 main() {
-    # Check for cleanup flag
-    if [ "$1" = "--cleanup" ] || [ "$1" = "-c" ]; then
+    echo "🚀 GitHub Actions Prerequisites Setup for $PROJECT_NAME"
+    echo "======================================================="
+    
+    # Handle help flag
+    if [ "$MODE" = "--help" ] || [ "$MODE" = "-h" ] || [ -z "$MODE" ]; then
+        show_usage
+        return 0
+    fi
+    
+    # Check for cleanup mode
+    if [ "$MODE" = "cleanup" ]; then
         echo "🧹 GitHub Actions Cleanup for $PROJECT_NAME"
         echo "========================================="
         cleanup_resources
         return 0
     fi
     
-    echo "🔍 Checking prerequisites..."
-    
-    if ! check_aws_setup; then
-        exit 1
-    fi
-    
-    # Generate unique names
-    local bucket_name="terraform-state-$PROJECT_NAME-$RANDOM"
-    local table_name="terraform-locks"
-    
-    echo ""
-    echo "📋 Configuration:"
-    echo "   Project: $PROJECT_NAME"
-    echo "   AWS Region: $AWS_REGION"
-    echo "   S3 Bucket: $bucket_name"
-    echo "   DynamoDB Table: $table_name"
-    echo ""
-    
-    if [ "$SKIP_CONFIRMATION" != "true" ]; then
-        read -p "Continue with setup? (y/n): " confirmation
-        if [ "$confirmation" != "y" ] && [ "$confirmation" != "Y" ]; then
-            echo "❌ Setup cancelled"
-            exit 0
+    # Check for setup mode
+    if [ "$MODE" = "setup" ]; then
+        echo "🔍 Checking prerequisites..."
+        
+        if ! check_aws_setup; then
+            exit 1
         fi
+        
+        # Generate unique names
+        local bucket_name="terraform-state-$PROJECT_NAME-$RANDOM"
+        local table_name="terraform-locks"
+        
+        echo ""
+        echo "📋 Configuration:"
+        echo "   Project: $PROJECT_NAME"
+        echo "   AWS Region: $AWS_REGION"
+        echo "   S3 Bucket: $bucket_name"
+        echo "   DynamoDB Table: $table_name"
+        echo ""
+        
+        if [ "$SKIP_CONFIRMATION" != "true" ]; then
+            read -p "Continue with setup? (y/n): " confirmation
+            if [ "$confirmation" != "y" ] && [ "$confirmation" != "Y" ]; then
+                echo "❌ Setup cancelled"
+                exit 0
+            fi
+        fi
+        
+        # Create resources
+        local created_bucket
+        if ! created_bucket=$(create_terraform_state_bucket "$bucket_name"); then
+            exit 1
+        fi
+        
+        if ! create_dynamodb_lock_table "$table_name"; then
+            exit 1
+        fi
+        
+        # Update Terraform backend
+        local backend_file="$(dirname "$0")/terraform/backend.tf"
+        update_terraform_backend "$created_bucket" "$backend_file"
+        
+        echo ""
+        echo "🎉 Setup completed successfully!"
+        echo "================================="
+        echo ""
+        echo "📊 Resources Created:"
+        echo "   ✅ S3 Bucket: $created_bucket"
+        echo "   ✅ DynamoDB Table: $table_name"
+        echo ""
+        
+        echo "🔐 GitHub Repository Secrets:"
+        echo "   Add these secrets to your GitHub repository:"
+        echo "   Settings → Secrets and variables → Actions → New repository secret"
+        echo ""
+        echo "   AWS_ACCESS_KEY_ID = [Your existing AWS Access Key ID]"
+        echo "   AWS_SECRET_ACCESS_KEY = [Your existing AWS Secret Access Key]"
+        echo "   TERRAFORM_STATE_BUCKET = $created_bucket"
+        echo ""
+        echo "💡 Use your existing AWS credentials from 'aws configure'"
+        
+        echo ""
+        echo "🚀 Next Steps:"
+        echo "   1. Add the above secrets to your GitHub repository"
+        echo "   2. Run 'terraform init' in the terraform directory"
+        echo "   3. Test your GitHub Actions workflows"
+        echo "   4. Create additional environments as needed"
+        echo ""
+        echo "💡 GitHub Actions URL: https://github.com/your-username/your-repo/actions"
+        return 0
     fi
     
-    # Create resources
-    local created_bucket
-    if ! created_bucket=$(create_terraform_state_bucket "$bucket_name"); then
-        exit 1
-    fi
-    
-    if ! create_dynamodb_lock_table "$table_name"; then
-        exit 1
-    fi
-    
-    # Update Terraform backend
-    local backend_file="$(dirname "$0")/terraform/backend.tf"
-    update_terraform_backend "$created_bucket" "$backend_file"
-    
-    echo ""
-    echo "🎉 Setup completed successfully!"
-    echo "================================="
-    echo ""
-    echo "📊 Resources Created:"
-    echo "   ✅ S3 Bucket: $created_bucket"
-    echo "   ✅ DynamoDB Table: $table_name"
-    echo ""
-    
-    echo "🔐 GitHub Repository Secrets:"
-    echo "   Add these secrets to your GitHub repository:"
-    echo "   Settings → Secrets and variables → Actions → New repository secret"
-    echo ""
-    echo "   AWS_ACCESS_KEY_ID = [Your existing AWS Access Key ID]"
-    echo "   AWS_SECRET_ACCESS_KEY = [Your existing AWS Secret Access Key]"
-    echo "   TERRAFORM_STATE_BUCKET = $created_bucket"
-    echo ""
-    echo "💡 Use your existing AWS credentials from 'aws configure'"
-    
-    echo ""
-    echo "🚀 Next Steps:"
-    echo "   1. Add the above secrets to your GitHub repository"
-    echo "   2. Run 'terraform init' in the terraform directory"
-    echo "   3. Test your GitHub Actions workflows"
-    echo "   4. Create additional environments as needed"
-    echo ""
-    echo "💡 GitHub Actions URL: https://github.com/your-username/your-repo/actions"
+    # Invalid mode
+    echo "❌ Invalid mode: $MODE"
+    echo "Use 'setup' or 'cleanup'. Run with --help for usage information."
+    exit 1
 }
 
 # Script usage information
 show_usage() {
-    echo "Usage: $0 [PROJECT_NAME] [AWS_REGION] [SKIP_CONFIRMATION]"
-    echo "       $0 --cleanup | -c"
+    echo "🚀 GitHub Actions Prerequisites Setup for $PROJECT_NAME"
+    echo "======================================================="
     echo ""
-    echo "Setup Mode Parameters:"
+    echo "Usage: $0 [MODE] [PROJECT_NAME] [AWS_REGION] [SKIP_CONFIRMATION]"
+    echo ""
+    echo "Modes:"
+    echo "  setup     - Create AWS resources (S3 bucket, DynamoDB table)"
+    echo "  cleanup   - Delete all resources created by this script (DESTRUCTIVE)"
+    echo ""
+    echo "Parameters:"
     echo "  PROJECT_NAME      - Name of your project (default: kudos-app)"
     echo "  AWS_REGION        - AWS region to use (default: us-east-1)"
     echo "  SKIP_CONFIRMATION - Set to 'true' to skip confirmation prompts"
     echo ""
-    echo "Cleanup Mode:"
-    echo "  --cleanup, -c     - Delete all resources created by this script (DESTRUCTIVE)"
-    echo ""
     echo "Examples:"
-    echo "  $0                              # Setup with defaults"
-    echo "  $0 my-app                       # Custom project name"
-    echo "  $0 my-app us-west-2             # Custom project and region"
-    echo "  $0 my-app us-west-2 true        # Skip confirmations"
-    echo "  $0 --cleanup                    # Delete all resources"
-    echo "  PROJECT_NAME=my-app SKIP_CONFIRMATION=true $0 -c   # Cleanup without prompts"
+    echo "  $0 setup                              # Setup with defaults"
+    echo "  $0 setup my-app                       # Custom project name"
+    echo "  $0 setup my-app us-west-2             # Custom project and region"
+    echo "  $0 setup my-app us-west-2 true        # Skip confirmations"
+    echo "  $0 cleanup                            # Delete all resources"
+    echo "  PROJECT_NAME=my-app $0 cleanup        # Cleanup specific project"
     echo ""
 }
 
-# Handle help flag
-if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
-    show_usage
-    exit 0
-fi
-
-# Handle cleanup mode
-if [ "$1" = "--cleanup" ] || [ "$1" = "-c" ]; then
-    # Allow environment variables to override defaults for cleanup
-    PROJECT_NAME="${PROJECT_NAME:-kudos-app}"
-    SKIP_CONFIRMATION="${SKIP_CONFIRMATION:-false}"
-    main "--cleanup"
-else
-    # Run setup mode
-    main
-fi
+# Execute main function
+main

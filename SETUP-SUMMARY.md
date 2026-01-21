@@ -60,6 +60,28 @@
 - `AWS_ACCESS_KEY_ID`: Your AWS Access Key ID
 - `AWS_SECRET_ACCESS_KEY`: Your AWS Secret Access Key  
 - `TERRAFORM_STATE_BUCKET`: Auto-generated bucket name (displayed after setup)
+- `ECR_REGISTRY`: Your ECR registry URL (e.g., 036983629554.dkr.ecr.us-east-1.amazonaws.com)
+- `SNYK_TOKEN`: Snyk API token for security scanning
+
+## 🚀 CI/CD Pipeline Integration
+
+The repository now includes an enterprise-grade CI/CD pipeline:
+
+### ✅ **Updated Workflow Features:**
+- **Multi-Environment Support**: Deploy to dev, staging, or production
+- **AWS EKS Integration**: Direct deployment to your EKS cluster
+- **ECR Integration**: Automatic Docker image build and push to ECR
+- **Security Scanning**: Snyk dependency scanning + Trivy container scanning
+- **Comprehensive Validation**: Health checks, deployment verification, and monitoring
+- **Professional Reporting**: Deployment summaries and failure notifications
+
+### 🎯 **Deployment Process:**
+1. **Quality Gates**: Lint → Test → Security Scan → Build
+2. **Container Build**: Multi-stage Docker build → Push to ECR → Security scan
+3. **EKS Deployment**: Deploy to selected environment → Health checks → Validation
+4. **Post-Deployment**: Generate reports → Send notifications
+
+See [.github/workflows/README.md](.github/workflows/README.md) for complete CI/CD documentation.
 
 ## 🧪 Tested Functionality
 

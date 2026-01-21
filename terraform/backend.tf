@@ -4,7 +4,7 @@
 terraform {
   backend "s3" {
     # S3 bucket configuration
-    bucket = "make_bucket: terraform-state-kudos-app-151162371 terraform-state-kudos-app-151162371"
+    bucket = "make_bucket: terraform-state-kudos-app-2038280577 terraform-state-kudos-app-2038280577"
     key    = "kudos-app/dev/terraform.tfstate" 
     region = "us-east-1"
     
@@ -13,5 +13,6 @@ terraform {
     encrypt        = true
   }
 }
+
 
 
