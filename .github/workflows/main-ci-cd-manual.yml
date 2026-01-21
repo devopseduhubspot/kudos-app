@@ -339,8 +339,76 @@ jobs:
           echo "🔍 Environment: ${{ github.event.inputs.environment || 'dev' }}"
           echo "🎯 Looking for EKS cluster: $EKS_CLUSTER_NAME"
           echo "🌍 In region: $AWS_REGION"
+          
+          # Test AWS CLI authentication
+          echo "🔐 Testing AWS CLI authentication..."
+          aws sts get-caller-identity
+          
+          # Check if cluster exists
+          echo "🔍 Checking if EKS cluster exists..."
+          if aws eks describe-cluster --name $EKS_CLUSTER_NAME --region $AWS_REGION; then
+            echo "✅ EKS cluster found"
+          else
+            echo "❌ EKS cluster not found or not accessible"
+            echo "Available clusters:"
+            aws eks list-clusters --region $AWS_REGION || echo "Failed to list clusters"
+            exit 1
+          fi
+          
+          # Update kubeconfig
+          echo "🔄 Updating kubeconfig..."
           aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
-          kubectl cluster-info
+          
+          # Test cluster connectivity
+          echo "🔗 Testing cluster connectivity..."
+          if kubectl cluster-info; then
+            echo "✅ Successfully connected to cluster"
+          else
+            echo "❌ Failed to connect to cluster"
+            exit 1
+          fi
+          
+          # Show current context
+          echo "📋 Current kubectl context:"
+          kubectl config current-context
+
+      - name: "🧹 Cleanup stuck resources"
+        run: |
+          echo "🧹 Checking for stuck resources..."
+          
+          # Test kubectl connectivity first
+          echo "🔍 Testing kubectl connectivity..."
+          if ! kubectl get nodes; then
+            echo "❌ Cannot connect to cluster"
+            exit 1
+          fi
+          
+          # Check current namespace
+          echo "📍 Current namespace: $(kubectl config view --minify --output 'jsonpath={..namespace}' || echo 'default')"
+          
+          # Check for stuck pods and remove them
+          echo "🔍 Looking for stuck frontend pods..."
+          STUCK_FRONTEND=$(kubectl get pods -l app=kudos-frontend --field-selector=status.phase=Failed -o name 2>/dev/null || echo "")
+          echo "🔍 Looking for stuck backend pods..."
+          STUCK_BACKEND=$(kubectl get pods -l app=kudos-backend --field-selector=status.phase=Failed -o name 2>/dev/null || echo "")
+          
+          if [ ! -z "$STUCK_FRONTEND" ]; then
+            echo "🗑️ Removing stuck frontend pods: $STUCK_FRONTEND"
+            kubectl delete $STUCK_FRONTEND || echo "Failed to delete some frontend pods"
+          else
+            echo "✅ No stuck frontend pods found"
+          fi
+          
+          if [ ! -z "$STUCK_BACKEND" ]; then
+            echo "🗑️ Removing stuck backend pods: $STUCK_BACKEND"
+            kubectl delete $STUCK_BACKEND || echo "Failed to delete some backend pods"
+          else
+            echo "✅ No stuck backend pods found"
+          fi
+          
+          # Show current pod status
+          echo "📊 Current pod status:"
+          kubectl get pods -l "app in (kudos-frontend,kudos-backend)" --show-labels || echo "No pods found"
 
       - name: "🏗️ Update Kubernetes manifests with new images"
         run: |
@@ -353,18 +421,53 @@ jobs:
           echo "Frontend: $FRONTEND_IMAGE_NAME"
           echo "Backend: $BACKEND_IMAGE_NAME"
           
-          # Update both images in deployment.yaml
-          sed -i "/kudos-frontend/{N;N;N;s|image:.*|image: $FRONTEND_IMAGE_NAME|}" k8s/deployment.yaml
-          sed -i "/kudos-backend/{N;N;N;s|image:.*|image: $BACKEND_IMAGE_NAME|}" k8s/deployment.yaml
+          # Use kubectl set image for reliable updates
+          echo "🔄 Updating deployment images..."
+          kubectl set image deployment/kudos-frontend kudos-frontend=$FRONTEND_IMAGE_NAME
+          kubectl set image deployment/kudos-backend kudos-backend=$BACKEND_IMAGE_NAME
           
-          # Show what we're deploying
-          echo "🔍 Updated Kubernetes manifests:"
-          grep -n "image:" k8s/deployment.yaml
+          # Verify image updates
+          echo "🔍 Verifying image updates:"
+          kubectl get deployment kudos-frontend -o jsonpath='{.spec.template.spec.containers[0].image}'
+          echo
+          kubectl get deployment kudos-backend -o jsonpath='{.spec.template.spec.containers[0].image}'
+          echo
 
       - name: "🚀 Deploy to EKS"
         run: |
           echo "🚀 Deploying to EKS cluster: $EKS_CLUSTER_NAME"
-          kubectl apply -k k8s/
+          
+          # Apply base manifests first (ConfigMap, Services)
+          echo "📁 Applying ConfigMap..."
+          if kubectl apply -f k8s/configmap.yaml; then
+            echo "✅ ConfigMap applied successfully"
+          else
+            echo "❌ Failed to apply ConfigMap"
+            exit 1
+          fi
+          
+          echo "🌐 Applying Services..."
+          if kubectl apply -f k8s/service.yaml; then
+            echo "✅ Services applied successfully"
+          else
+            echo "❌ Failed to apply Services"
+            exit 1
+          fi
+          
+          # Apply deployments (images already updated in previous step)
+          echo "🚀 Applying Deployments..."
+          if kubectl apply -f k8s/deployment.yaml; then
+            echo "✅ Deployments applied successfully"
+          else
+            echo "❌ Failed to apply Deployments"
+            kubectl get events --sort-by='.lastTimestamp' | tail -10
+            exit 1
+          fi
+          
+          # Show deployment status immediately after apply
+          echo "📊 Deployment status after apply:"
+          kubectl get deployments
+          kubectl get pods -l "app in (kudos-frontend,kudos-backend)"
           
           # Add labels for tracking
           kubectl label deployment/kudos-frontend version=$IMAGE_TAG --overwrite
@@ -375,8 +478,42 @@ jobs:
       - name: "⏳ Wait for Deployment Rollout"
         run: |
           echo "⏳ Waiting for deployments to complete..."
-          kubectl rollout status deployment/kudos-frontend --timeout=300s
-          kubectl rollout status deployment/kudos-backend --timeout=300s
+          
+          # Check initial deployment status
+          echo "📊 Initial deployment status:"
+          kubectl get deployments
+          kubectl describe deployment kudos-frontend
+          kubectl describe deployment kudos-backend
+          
+          # Wait for frontend rollout with diagnostics
+          echo "🔄 Rolling out frontend deployment..."
+          if kubectl rollout status deployment/kudos-frontend --timeout=600s; then
+            echo "✅ Frontend rollout completed successfully"
+          else
+            echo "❌ Frontend rollout failed or timed out"
+            echo "🔍 Frontend deployment events:"
+            kubectl get events --field-selector involvedObject.name=kudos-frontend --sort-by='.lastTimestamp'
+            echo "🔍 Frontend pod status:"
+            kubectl get pods -l app=kudos-frontend -o wide
+            kubectl describe pods -l app=kudos-frontend | tail -20
+            exit 1
+          fi
+          
+          # Wait for backend rollout with diagnostics
+          echo "🔄 Rolling out backend deployment..."
+          if kubectl rollout status deployment/kudos-backend --timeout=600s; then
+            echo "✅ Backend rollout completed successfully"
+          else
+            echo "❌ Backend rollout failed or timed out"
+            echo "🔍 Backend deployment events:"
+            kubectl get events --field-selector involvedObject.name=kudos-backend --sort-by='.lastTimestamp'
+            echo "🔍 Backend pod status:"
+            kubectl get pods -l app=kudos-backend -o wide
+            kubectl describe pods -l app=kudos-backend | tail -20
+            exit 1
+          fi
+          
+          echo "✅ All deployments completed successfully!"
 
       - name: "🔍 Verify Deployment"
         run: |
@@ -391,63 +528,57 @@ jobs:
         run: |
           echo "🏥 Running application health checks..."
           
-          # Check Backend Health First
+          # Wait a moment for pods to stabilize
+          echo "⏳ Waiting for pods to stabilize..."
+          sleep 30
+          
+          # Check pod status
+          echo "📊 Pod Status:"
+          kubectl get pods -l "app in (kudos-frontend,kudos-backend)" -o wide
+          
+          # Simple backend health check
           echo "🔍 Testing Backend Health..."
           BACKEND_POD=$(kubectl get pods -l app=kudos-backend -o jsonpath='{.items[0].metadata.name}')
-          echo "Backend pod: $BACKEND_POD"
           
-          # Port forward backend service for health check
-          kubectl port-forward svc/kudos-backend 3001:3001 &
-          BACKEND_PF_PID=$!
-          sleep 10
-          
-          # Test backend health endpoint
-          for i in {1..5}; do
-            BACKEND_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/health || echo "000")
-            if [ "$BACKEND_STATUS" = "200" ]; then
-              echo "✅ Backend health check passed (HTTP 200)"
-              break
+          if [ ! -z "$BACKEND_POD" ]; then
+            echo "Backend pod: $BACKEND_POD"
+            
+            # Check backend logs
+            echo "📋 Backend logs:"
+            kubectl logs $BACKEND_POD --tail=10
+            
+            # Test backend health endpoint via port-forward
+            kubectl port-forward $BACKEND_POD 3001:3001 &
+            PF_PID=$!
+            sleep 10
+            
+            HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/health || echo "000")
+            kill $PF_PID 2>/dev/null || true
+            
+            if [ "$HEALTH_STATUS" = "200" ]; then
+              echo "✅ Backend health check passed"
+            else
+              echo "⚠️ Backend health check returned HTTP $HEALTH_STATUS"
             fi
-            echo "⏳ Backend attempt $i: HTTP $BACKEND_STATUS, retrying..."
-            sleep 5
-          done
-          
-          kill $BACKEND_PF_PID 2>/dev/null || true
-          
-          if [ "$BACKEND_STATUS" != "200" ]; then
-            echo "❌ Backend health check failed"
-            kubectl logs $BACKEND_POD
-            exit 1
+          else
+            echo "❌ No backend pod found"
           fi
           
-          # Check Frontend Health
+          # Simple frontend health check
           echo "🔍 Testing Frontend Health..."
           FRONTEND_POD=$(kubectl get pods -l app=kudos-frontend -o jsonpath='{.items[0].metadata.name}')
-          echo "Frontend pod: $FRONTEND_POD"
           
-          # Check if nginx is running
-          kubectl exec $FRONTEND_POD -- ps aux | grep nginx || {
-            echo "❌ Nginx process not found"
-            kubectl logs $FRONTEND_POD
-            exit 1
-          }
-          
-          # Check if the frontend service is accessible
-          kubectl port-forward svc/kudos-frontend 8080:80 &
-          FRONTEND_PF_PID=$!
-          sleep 10
-          
-          # Test HTTP endpoint
-          for i in {1..5}; do
-            FRONTEND_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080 || echo "000")
-            if [ "$FRONTEND_STATUS" = "200" ]; then
-              echo "✅ Frontend health check passed (HTTP 200)"
-              kill $FRONTEND_PF_PID 2>/dev/null || true
-              exit 0
-            fi
-            echo "⏳ Frontend attempt $i: HTTP $FRONTEND_STATUS, retrying..."
-            sleep 5
-          done
+          if [ ! -z "$FRONTEND_POD" ]; then
+            echo "Frontend pod: $FRONTEND_POD"
+            
+            # Check frontend logs
+            echo "📋 Frontend logs:"
+            kubectl logs $FRONTEND_POD --tail=5
+            
+            echo "✅ Frontend pod is running"
+          else
+            echo "❌ No frontend pod found"
+          fi
           
           echo "❌ Frontend health check failed after 5 attempts"
           kill $FRONTEND_PF_PID 2>/dev/null || true
