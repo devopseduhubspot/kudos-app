@@ -264,11 +264,15 @@ jobs:
           kubectl cluster-info
 
       - name: "🏗️ Update Kubernetes manifests with new image"
-        env:
-          ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
         run: |
+          # Get ECR registry dynamically
+          ECR_REGISTRY=$(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_REGION.amazonaws.com
+          FULL_IMAGE_NAME=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          
+          echo "🔍 Using image: $FULL_IMAGE_NAME"
+          
           # Update the image in deployment.yaml
-          sed -i "s|image:.*|image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG|" k8s/deployment.yaml
+          sed -i "s|image:.*|image: $FULL_IMAGE_NAME|" k8s/deployment.yaml
           
           # Show what we're deploying
           echo "🔍 Updated Kubernetes manifests:"
