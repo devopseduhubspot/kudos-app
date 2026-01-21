@@ -99,6 +99,30 @@ function New-DynamoDBTable {
     return $true
 }
 
+# Function to create ECR repository
+function New-ECRRepository {
+    param([string]$RepoName)
+    
+    Write-Host "Creating ECR repository: $RepoName..." -ForegroundColor Yellow
+    
+    # Check if repository exists
+    aws ecr describe-repositories --repository-names $RepoName --region $AWSRegion 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "ECR repository already exists: $RepoName" -ForegroundColor Green
+        return $true
+    }
+    
+    # Create repository
+    aws ecr create-repository --repository-name $RepoName --region $AWSRegion
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Failed to create ECR repository" -ForegroundColor Red
+        return $false
+    }
+    
+    Write-Host "ECR repository created successfully: $RepoName" -ForegroundColor Green
+    return $true
+}
+
 # Function to update Terraform backend
 function Update-Backend {
     param([string]$BucketName)
@@ -250,6 +274,10 @@ function Invoke-Setup {
     $dynamoSuccess = New-DynamoDBTable -TableName $tableName
     if (-not $dynamoSuccess) { return }
     
+    # Create ECR repository
+    $ecrSuccess = New-ECRRepository -RepoName $ProjectName
+    if (-not $ecrSuccess) { return }
+    
     # Update backend
     Update-Backend -BucketName $bucket
     
@@ -260,6 +288,15 @@ function Invoke-Setup {
     Write-Host "  AWS_ACCESS_KEY_ID = [Your AWS Access Key]" -ForegroundColor White
     Write-Host "  AWS_SECRET_ACCESS_KEY = [Your AWS Secret Key]" -ForegroundColor White
     Write-Host "  TERRAFORM_STATE_BUCKET = $bucket" -ForegroundColor White
+    Write-Host "" 
+    
+    # Get ECR registry URL
+    $awsAccount = aws sts get-caller-identity --query 'Account' --output text 2>$null
+    if ($awsAccount) {
+        $ecrRegistry = "$awsAccount.dkr.ecr.$AWSRegion.amazonaws.com"
+        Write-Host "💡 Your ECR Registry URL: $ecrRegistry" -ForegroundColor Cyan
+        Write-Host "   (No secret needed - GitHub Actions can retrieve this automatically)" -ForegroundColor Gray
+    }
     Write-Host ""
     Write-Host "Next Steps:" -ForegroundColor Cyan
     Write-Host "  1. Add the above secrets to your GitHub repository" -ForegroundColor White

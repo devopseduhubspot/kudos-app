@@ -246,6 +246,28 @@ create_dynamodb_lock_table() {
     return 0
 }
 
+# Function to create ECR repository
+create_ecr_repository() {
+    local repo_name="$1"
+    
+    echo "📦 Creating ECR repository..."
+    
+    # Check if repository already exists
+    if aws ecr describe-repositories --repository-names "$repo_name" --region "$AWS_REGION" &> /dev/null; then
+        echo "✅ ECR repository $repo_name already exists"
+        return 0
+    fi
+    
+    # Create repository
+    if ! aws ecr create-repository --repository-name "$repo_name" --region "$AWS_REGION" &> /dev/null; then
+        echo "❌ Failed to create ECR repository"
+        return 1
+    fi
+    
+    echo "✅ ECR repository created: $repo_name"
+    return 0
+}
+
 # Function to update backend configuration
 update_terraform_backend() {
     local bucket_name="$1"
@@ -460,6 +482,11 @@ main() {
             exit 1
         fi
         
+        # Create ECR repository
+        if ! create_ecr_repository "$PROJECT_NAME"; then
+            exit 1
+        fi
+        
         # Update Terraform backend
         local backend_file="$(dirname "$0")/terraform/backend.tf"
         update_terraform_backend "$created_bucket" "$backend_file"
@@ -471,6 +498,14 @@ main() {
         echo "📊 Resources Created:"
         echo "   ✅ S3 Bucket: $created_bucket"
         echo "   ✅ DynamoDB Table: $table_name"
+        echo "   ✅ ECR Repository: $PROJECT_NAME"
+        
+        # Get ECR registry URL
+        local aws_account
+        if aws_account=$(aws sts get-caller-identity --query 'Account' --output text 2>/dev/null); then
+            local ecr_registry="$aws_account.dkr.ecr.$AWS_REGION.amazonaws.com"
+            echo "   📦 ECR Registry: $ecr_registry"
+        fi
         echo ""
         
         echo "🔐 GitHub Repository Secrets:"

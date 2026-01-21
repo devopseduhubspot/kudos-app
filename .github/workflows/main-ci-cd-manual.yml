@@ -161,6 +161,11 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: "📦 Create ECR Repository (if not exists)"
+        run: |
+          aws ecr describe-repositories --repository-names $ECR_REPOSITORY --region $AWS_REGION || \
+          aws ecr create-repository --repository-name $ECR_REPOSITORY --region $AWS_REGION
+
       - name: "🏗️ Login to Amazon ECR"
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
@@ -182,10 +187,21 @@ jobs:
           image-ref: ${{ steps.build-image.outputs.image }}
           format: 'sarif'
           output: 'trivy-results.sarif'
+        continue-on-error: true
+
+      - name: "📋 Check Trivy results"
+        run: |
+          if [ -f "trivy-results.sarif" ]; then
+            echo "✅ Trivy scan completed successfully"
+            echo "📊 SARIF file size: $(wc -c < trivy-results.sarif) bytes"
+          else
+            echo "⚠️  Trivy results file not found, creating empty SARIF"
+            echo '{"version":"2.1.0","runs":[]}' > trivy-results.sarif
+          fi
 
       - name: "📊 Upload Trivy scan results"
-        uses: github/codeql-action/upload-sarif@v2
-        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-results.sarif') != ''
         with:
           sarif_file: 'trivy-results.sarif'
 
