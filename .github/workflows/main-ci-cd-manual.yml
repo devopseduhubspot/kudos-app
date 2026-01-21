@@ -337,7 +337,7 @@ jobs:
           echo "🔖 Environment: ${{ github.event.inputs.environment || 'dev' }}"
           echo "� Branch: ${{ github.ref_name }}"
           echo "🏷️  Image Tag: $IMAGE_TAG"
-          echo "📅 Branch-DateTime Tag: ${{ steps.build-image.outputs.branch-datetime-tag || 'N/A' }}"
+
           echo "🎯 EKS Cluster: $EKS_CLUSTER_NAME"
           echo "🌍 AWS Region: $AWS_REGION"
           echo ""
@@ -379,7 +379,6 @@ jobs:
           echo "**Environment:** ${{ github.event.inputs.environment || 'dev' }}" >> deployment-report.md
           echo "**Branch:** ${{ github.ref_name }}" >> deployment-report.md
           echo "**Image Tag:** $IMAGE_TAG" >> deployment-report.md
-          echo "**Branch-DateTime Tag:** ${{ needs.docker.outputs.branch-datetime-tag || 'N/A' }}" >> deployment-report.md
           echo "**Deployment Time:** $(date -u)" >> deployment-report.md
           echo "**Commit SHA:** ${{ github.sha }}" >> deployment-report.md
           echo "" >> deployment-report.md

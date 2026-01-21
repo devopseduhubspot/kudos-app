@@ -61,10 +61,12 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: 🔍 Terraform Format Check
+        id: fmt
         run: terraform fmt -check -recursive
         continue-on-error: true
 
       - name: 🎯 Terraform Init
+        id: init
         run: |
           terraform init \
             -backend-config="bucket=${{ secrets.TERRAFORM_STATE_BUCKET }}" \
@@ -72,6 +74,7 @@ jobs:
             -backend-config="region=${{ env.AWS_REGION }}"
 
       - name: 🔍 Terraform Validate
+        id: validate
         run: terraform validate
 
       - name: 📊 Terraform Plan
