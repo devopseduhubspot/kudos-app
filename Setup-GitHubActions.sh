@@ -458,13 +458,16 @@ main() {
         # Generate unique names
         local bucket_name="terraform-state-$PROJECT_NAME-$RANDOM"
         local table_name="terraform-locks"
+        local ecr_repo_name="$PROJECT_NAME-$ENVIRONMENT"
         
         echo ""
         echo "📋 Configuration:"
         echo "   Project: $PROJECT_NAME"
+        echo "   Environment: $ENVIRONMENT"
         echo "   AWS Region: $AWS_REGION"
         echo "   S3 Bucket: $bucket_name"
         echo "   DynamoDB Table: $table_name"
+        echo "   ECR Repository: $ecr_repo_name"
         echo ""
         
         if [ "$SKIP_CONFIRMATION" != "true" ]; then
