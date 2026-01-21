@@ -122,6 +122,49 @@ jobs:
             echo "To apply manually, download the artifact and run: terraform apply tfplan"
           fi
 
+      - name: 🧹 Cleanup Kubernetes Resources (Before Destroy)
+        if: github.event.inputs.action == 'destroy'
+        run: |
+          echo "🧹 Cleaning up Kubernetes resources before destroying infrastructure..."
+          
+          # Setup kubectl
+          curl -LO "https://dl.k8s.io/release/v1.29.0/bin/linux/amd64/kubectl"
+          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+          
+          # Configure kubectl for EKS cluster
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.TF_VAR_app_name }} || {
+            echo "⚠️ EKS cluster not found, continuing with infrastructure destroy..."
+            exit 0
+          }
+          
+          echo "✅ Connected to EKS cluster, cleaning up resources..."
+          
+          # Delete LoadBalancer services first (they create ELBs that block VPC deletion)
+          echo "🗑️ Deleting LoadBalancer services..."
+          kubectl get svc -o name | xargs -r kubectl delete --timeout=300s || true
+          
+          # Delete all application resources if k8s directory exists
+          if [ -d "../k8s" ]; then
+            echo "🗑️ Deleting all Kubernetes resources..."
+            kubectl delete -k ../k8s/ --timeout=300s || true
+          fi
+          
+          # Wait for AWS resources to be cleaned up
+          echo "⏳ Waiting for AWS LoadBalancers to be deleted..."
+          sleep 60
+          
+          # Force cleanup any remaining ELBs
+          echo "🔍 Checking for remaining ELBs..."
+          aws elb describe-load-balancers --region ${{ env.AWS_REGION }} --query 'LoadBalancerDescriptions[].LoadBalancerName' --output text | tr '\t' '\n' | while read elb; do
+            if [ -n "$elb" ]; then
+              echo "🗑️ Force deleting ELB: $elb"
+              aws elb delete-load-balancer --load-balancer-name "$elb" --region ${{ env.AWS_REGION }} || true
+            fi
+          done
+          
+          echo "✅ Kubernetes cleanup completed"
+        continue-on-error: true
+
       - name: 💥 Terraform Destroy
         if: github.event.inputs.action == 'destroy'
         run: |
