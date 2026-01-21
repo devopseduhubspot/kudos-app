@@ -372,6 +372,28 @@ jobs:
           echo "📋 Current kubectl context:"
           kubectl config current-context
 
+      - name: "✅ Verify Cluster Access"
+        run: |
+          echo "🔍 Verifying cluster access and permissions..."
+          
+          # Check nodes
+          echo "🖥️ Cluster nodes:"
+          kubectl get nodes -o wide
+          
+          # Check current namespace and permissions
+          echo "📍 Current namespace:"
+          kubectl config view --minify --output 'jsonpath={..namespace}' || echo 'default'
+          
+          # Test basic permissions
+          echo "🔐 Testing basic permissions:"
+          kubectl auth can-i get pods
+          kubectl auth can-i create deployments
+          kubectl auth can-i patch deployments
+          
+          # Show existing resources
+          echo "📦 Existing Kudos app resources:"
+          kubectl get all -l "app in (kudos-frontend,kudos-backend)" || echo "No existing resources found"
+
       - name: "🧹 Cleanup stuck resources"
         run: |
           echo "🧹 Checking for stuck resources..."
