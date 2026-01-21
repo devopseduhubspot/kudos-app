@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: kudos-frontend
-          image: 036983629554.dkr.ecr.us-east-1.amazonaws.com/kudos-app:latest
+          image: 036983629554.dkr.ecr.us-east-1.amazonaws.com/kudos-app-dev:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 80
@@ -52,7 +52,7 @@ spec:
     spec:
       containers:
         - name: kudos-backend
-          image: 036983629554.dkr.ecr.us-east-1.amazonaws.com/kudos-app-backend:latest
+          image: 036983629554.dkr.ecr.us-east-1.amazonaws.com/kudos-app-backend-dev:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 3001
