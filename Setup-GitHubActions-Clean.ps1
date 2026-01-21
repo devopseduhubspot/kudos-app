@@ -6,17 +6,18 @@
 # =============================================================================
 # Setup Mode:
 #   .\Setup-GitHubActions-Clean.ps1
-#   .\Setup-GitHubActions-Clean.ps1 -ProjectName "my-app"
-#   .\Setup-GitHubActions-Clean.ps1 -AWSRegion "us-west-2"
+#   .\Setup-GitHubActions-Clean.ps1 -ProjectName "my-app" -Environment "dev"
+#   .\Setup-GitHubActions-Clean.ps1 -ProjectName "my-app" -Environment "prod" -AWSRegion "us-west-2"
 #
 # Cleanup Mode (DESTRUCTIVE):
 #   .\Setup-GitHubActions-Clean.ps1 -Cleanup
-#   .\Setup-GitHubActions-Clean.ps1 -Cleanup -SkipConfirmation
+#   .\Setup-GitHubActions-Clean.ps1 -Cleanup -Environment "staging" -SkipConfirmation
 # =============================================================================
 
 param(
     [string]$ProjectName = "kudos-app",
-    [string]$AWSRegion = "us-east-1", 
+    [string]$AWSRegion = "us-east-1",
+    [string]$Environment = "dev",
     [switch]$SkipConfirmation,
     [switch]$Cleanup
 )
@@ -250,13 +251,16 @@ function Invoke-Setup {
     # Generate unique bucket name
     $bucketName = "terraform-state-$ProjectName-$(Get-Random)"
     $tableName = "terraform-locks"
+    $ecrRepoName = "$ProjectName-$Environment"
     
     Write-Host ""
     Write-Host "Configuration:" -ForegroundColor Cyan
     Write-Host "  Project: $ProjectName" -ForegroundColor White
+    Write-Host "  Environment: $Environment" -ForegroundColor White
     Write-Host "  Region: $AWSRegion" -ForegroundColor White
     Write-Host "  S3 Bucket: $bucketName" -ForegroundColor White
     Write-Host "  DynamoDB Table: $tableName" -ForegroundColor White
+    Write-Host "  ECR Repository: $ecrRepoName" -ForegroundColor White
     Write-Host ""
     
     if (-not $SkipConfirmation) {
@@ -275,7 +279,7 @@ function Invoke-Setup {
     if (-not $dynamoSuccess) { return }
     
     # Create ECR repository
-    $ecrSuccess = New-ECRRepository -RepoName $ProjectName
+    $ecrSuccess = New-ECRRepository -RepoName $ecrRepoName
     if (-not $ecrSuccess) { return }
     
     # Update backend
@@ -320,7 +324,7 @@ function Invoke-Cleanup {
         Write-Host "Resources to be deleted:" -ForegroundColor Yellow
         Write-Host "  - All S3 buckets matching: terraform-state-$ProjectName-*" -ForegroundColor White
         Write-Host "  - DynamoDB table: terraform-locks" -ForegroundColor White
-        Write-Host "  - ECR repository: $ProjectName" -ForegroundColor White
+        Write-Host "  - ECR repositories matching: $ProjectName-*" -ForegroundColor White
         Write-Host ""
         $confirm = Read-Host "Type 'DELETE' to confirm"
         if ($confirm -ne "DELETE") {
@@ -329,8 +333,17 @@ function Invoke-Cleanup {
         }
     }
     
-    # Delete ECR repository
-    Remove-ECRRepository -RepoName $ProjectName
+    # Delete ECR repositories (all environments)
+    Write-Host "Finding ECR repositories to delete..." -ForegroundColor Yellow
+    $repoList = aws ecr describe-repositories --region $AWSRegion --query "repositories[?starts_with(repositoryName, '$ProjectName-')].repositoryName" --output text 2>$null
+    if ($LASTEXITCODE -eq 0 -and $repoList) {
+        $repos = $repoList -split "\s+" | Where-Object { $_ -ne "" }
+        foreach ($repo in $repos) {
+            Remove-ECRRepository -RepoName $repo
+        }
+    } else {
+        Write-Host "No ECR repositories found matching: $ProjectName-*" -ForegroundColor Yellow
+    }
     
     # Find and delete S3 buckets
     Write-Host "Finding S3 buckets to delete..." -ForegroundColor Yellow

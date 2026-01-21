@@ -27,15 +27,16 @@
 # =============================================================================
 # 
 # Setup Mode (Creates Resources):
-# ./Setup-GitHubActions.sh setup                           # Basic setup
-# ./Setup-GitHubActions.sh setup my-app                    # Custom project
-# ./Setup-GitHubActions.sh setup my-app us-west-2          # Custom project and region
-# ./Setup-GitHubActions.sh setup my-app us-west-2 true     # Skip confirmations
+# ./Setup-GitHubActions.sh setup                                    # Basic setup (dev environment)
+# ./Setup-GitHubActions.sh setup my-app                             # Custom project (dev environment)  
+# ./Setup-GitHubActions.sh setup my-app us-west-2 staging           # Custom project, region, and environment
+# ./Setup-GitHubActions.sh setup my-app us-west-2 prod true         # Production setup, skip confirmations
 # 
 # Cleanup Mode (Deletes Everything - DESTRUCTIVE):
-# ./Setup-GitHubActions.sh cleanup                         # Delete all resources
-# ./Setup-GitHubActions.sh cleanup my-app                  # Custom project cleanup
-# PROJECT_NAME=my-app SKIP_CONFIRMATION=true ./Setup-GitHubActions.sh cleanup # Cleanup without prompts
+# ./Setup-GitHubActions.sh cleanup                                  # Delete all resources
+# ./Setup-GitHubActions.sh cleanup my-app                           # Custom project cleanup
+# ./Setup-GitHubActions.sh cleanup my-app us-west-2 staging         # Environment-specific cleanup
+# PROJECT_NAME=my-app ENVIRONMENT=prod SKIP_CONFIRMATION=true ./Setup-GitHubActions.sh cleanup # Cleanup without prompts
 #
 # =============================================================================
 # WHAT GETS CREATED
@@ -120,15 +121,17 @@ set -e  # Exit on any error
 MODE="$1"
 PROJECT_NAME="${2:-kudos-app}"
 AWS_REGION="${3:-us-east-1}"
-SKIP_CONFIRMATION="${4:-false}"
+ENVIRONMENT="${4:-dev}"
+SKIP_CONFIRMATION="${5:-false}"
 
 # Allow environment variables to override defaults
 PROJECT_NAME="${PROJECT_NAME:-$PROJECT_NAME}"
 AWS_REGION="${AWS_REGION:-$AWS_REGION}"
+ENVIRONMENT="${ENVIRONMENT:-$ENVIRONMENT}"
 SKIP_CONFIRMATION="${SKIP_CONFIRMATION:-$SKIP_CONFIRMATION}"
 
-echo "🚀 GitHub Actions Prerequisites Setup for $PROJECT_NAME"
-echo "======================================================="
+echo "🚀 GitHub Actions Prerequisites Setup for $PROJECT_NAME-$ENVIRONMENT"
+echo "================================================================="
 
 # Function to check if AWS CLI is installed and configured
 check_aws_setup() {
@@ -355,7 +358,7 @@ remove_ecr_repositories() {
     
     # List repositories matching project name
     local repositories=$(aws ecr describe-repositories --region "$AWS_REGION" \
-        --query "repositories[?repositoryName=='$project_name'].repositoryName" \
+        --query "repositories[?starts_with(repositoryName, '$project_name-')].repositoryName" \
         --output text 2>/dev/null)
     
     if [ -n "$repositories" ] && [ "$repositories" != "None" ]; then
@@ -371,7 +374,7 @@ remove_ecr_repositories() {
             fi
         done
     else
-        echo "⚠️ No ECR repositories found for project: $project_name"
+        echo "⚠️ No ECR repositories found matching: $project_name-*"
     fi
 }
 
@@ -385,7 +388,7 @@ cleanup_resources() {
         echo "Resources to be deleted:"
         echo "  - All S3 buckets matching pattern: terraform-state-$PROJECT_NAME-*"
         echo "  - DynamoDB table: terraform-locks"
-        echo "  - ECR repository: $PROJECT_NAME (with all images)"
+        echo "  - ECR repositories matching: $PROJECT_NAME-* (with all images)"
         echo ""
         read -p "Are you sure you want to DELETE all these resources? Type 'DELETE' to confirm: " confirmation
         
@@ -483,7 +486,7 @@ main() {
         fi
         
         # Create ECR repository
-        if ! create_ecr_repository "$PROJECT_NAME"; then
+        if ! create_ecr_repository "$ecr_repo_name"; then
             exit 1
         fi
         
@@ -498,7 +501,7 @@ main() {
         echo "📊 Resources Created:"
         echo "   ✅ S3 Bucket: $created_bucket"
         echo "   ✅ DynamoDB Table: $table_name"
-        echo "   ✅ ECR Repository: $PROJECT_NAME"
+        echo "   ✅ ECR Repository: $ecr_repo_name"
         
         # Get ECR registry URL
         local aws_account
