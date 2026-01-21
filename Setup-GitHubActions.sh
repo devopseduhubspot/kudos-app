@@ -149,7 +149,8 @@ check_aws_setup() {
         return 1
     fi
     
-    local aws_account=$(aws sts get-caller-identity --query 'Account' --output text 2>/dev/null)
+    local aws_account
+    aws_account=$(aws sts get-caller-identity --query 'Account' --output text 2>/dev/null)
     echo "✅ AWS CLI configured for account: $aws_account"
     return 0
 }
@@ -179,7 +180,8 @@ create_terraform_state_bucket() {
         --versioning-configuration Status=Enabled
     
     # Enable encryption
-    local encryption_config=$(cat <<EOF
+    local encryption_config
+    encryption_config=$(cat <<EOF
 {
   "Rules": [
     {
@@ -228,7 +230,8 @@ create_dynamodb_lock_table() {
     # Wait for table to be active
     echo "⏳ Waiting for DynamoDB table to be active..."
     while true; do
-        local table_status=$(aws dynamodb describe-table \
+        local table_status
+        table_status=$(aws dynamodb describe-table \
             --table-name "$table_name" \
             --query 'Table.TableStatus' \
             --output text 2>/dev/null)
@@ -357,7 +360,8 @@ remove_ecr_repositories() {
     echo "🔍 Finding ECR repositories to delete..."
     
     # List repositories matching project name
-    local repositories=$(aws ecr describe-repositories --region "$AWS_REGION" \
+    local repositories
+    repositories=$(aws ecr describe-repositories --region "$AWS_REGION" \
         --query "repositories[?starts_with(repositoryName, '$project_name-')].repositoryName" \
         --output text 2>/dev/null)
     
@@ -403,7 +407,8 @@ cleanup_resources() {
     
     # Find and delete S3 buckets
     echo "🔍 Finding S3 buckets to delete..."
-    local buckets=$(aws s3api list-buckets --query "Buckets[?starts_with(Name, 'terraform-state-$PROJECT_NAME-')].Name" --output text 2>/dev/null)
+    local buckets
+    buckets=$(aws s3api list-buckets --query "Buckets[?starts_with(Name, 'terraform-state-$PROJECT_NAME-')].Name" --output text 2>/dev/null)
     
     if [ -n "$buckets" ] && [ "$buckets" != "None" ]; then
         echo "$buckets" | tr '\t' '\n' | while read -r bucket; do
@@ -494,7 +499,8 @@ main() {
         fi
         
         # Update Terraform backend
-        local backend_file="$(dirname "$0")/terraform/backend.tf"
+        local backend_file
+        backend_file="$(dirname "$0")/terraform/backend.tf"
         update_terraform_backend "$created_bucket" "$backend_file"
         
         echo ""
