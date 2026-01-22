@@ -3,11 +3,11 @@
 
 # Create a private repository for your Docker images (Frontend)
 resource "aws_ecr_repository" "app" {
-  name         = var.app_name
+  name         = "${var.app_name}-${var.environment}"
   force_delete = true  # Allow deletion even with images
 
   tags = {
-    Name = "${var.app_name}-frontend-repository"
+    Name = "${var.app_name}-${var.environment}-frontend-repository"
   }
 
   lifecycle {
@@ -22,11 +22,11 @@ resource "aws_ecr_repository" "app" {
 
 # Create a private repository for backend images  
 resource "aws_ecr_repository" "backend" {
-  name         = "${var.app_name}-backend"
+  name         = "${var.app_name}-backend-${var.environment}"
   force_delete = true  # Allow deletion even with images
 
   tags = {
-    Name = "${var.app_name}-backend-repository"
+    Name = "${var.app_name}-backend-${var.environment}-repository"
   }
 
   lifecycle {

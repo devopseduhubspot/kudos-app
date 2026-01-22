@@ -8,4 +8,10 @@ variable "app_name" {
   default     = "kudos-app"
 }
 
-# That's it! We keep it simple with just one variable
+variable "environment" {
+  description = "Environment (dev, staging, prod)"
+  type        = string
+  default     = "dev"
+}
+
+# That's it! We keep it simple with just two main variables
