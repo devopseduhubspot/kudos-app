@@ -1,0 +1,369 @@
+# =========================================================
+# Monitoring Stack Deployment Workflow
+# =========================================================
+# This workflow manages Prometheus and Grafana monitoring
+# deployment on EKS clusters across different environments.
+#
+# Features:
+# - Manual trigger with environment selection
+# - Install/Uninstall monitoring stack
+# - Environment-specific configurations
+# - Comprehensive logging and status reporting
+# =========================================================
+
+name: monitoring-deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target Environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      action:
+        description: 'Monitoring Action'
+        required: true
+        default: 'install'
+        type: choice
+        options:
+          - install
+          - uninstall
+          - status
+      helm_timeout:
+        description: 'Helm Operation Timeout (minutes)'
+        required: false
+        default: '10'
+        type: string
+
+# ---------------------------------------------------------
+# Environment Variables
+# ---------------------------------------------------------
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER_NAME: kudos-app-${{ github.event.inputs.environment || 'dev' }}
+  MONITORING_NAMESPACE: monitoring
+  HELM_RELEASE_NAME: kube-prometheus-stack
+  HELM_TIMEOUT: ${{ github.event.inputs.helm_timeout || '10' }}m
+
+# ---------------------------------------------------------
+# Jobs
+# ---------------------------------------------------------
+jobs:
+  # ---------------------------------------------------------
+  # 1. Monitoring Stack Management
+  # ---------------------------------------------------------
+  manage-monitoring:
+    name: "📊 ${{ github.event.inputs.action }} Monitoring Stack"
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    
+    steps:
+      - name: "🔁 Checkout Repository"
+        uses: actions/checkout@v4
+
+      - name: "🔑 Configure AWS Credentials"
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: "⚙️ Setup kubectl"
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.29.0
+
+      - name: "🎡 Setup Helm"
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+
+      - name: "🔗 Update kubeconfig for EKS"
+        run: |
+          echo "🔍 Environment: ${{ github.event.inputs.environment || 'dev' }}"
+          echo "🎯 Target EKS cluster: $EKS_CLUSTER_NAME"
+          echo "🌍 AWS Region: $AWS_REGION"
+          echo "📊 Action: ${{ github.event.inputs.action }}"
+          
+          # Test AWS CLI authentication
+          echo "🔐 Testing AWS CLI authentication..."
+          aws sts get-caller-identity
+          
+          # Check if cluster exists
+          echo "🔍 Checking if EKS cluster exists..."
+          if aws eks describe-cluster --name $EKS_CLUSTER_NAME --region $AWS_REGION; then
+            echo "✅ EKS cluster found: $EKS_CLUSTER_NAME"
+          else
+            echo "❌ EKS cluster not found or not accessible"
+            echo "Available clusters:"
+            aws eks list-clusters --region $AWS_REGION || echo "Failed to list clusters"
+            exit 1
+          fi
+          
+          # Update kubeconfig
+          echo "🔄 Updating kubeconfig..."
+          aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
+          
+          # Test cluster connectivity
+          echo "🔗 Testing cluster connectivity..."
+          if kubectl cluster-info; then
+            echo "✅ Successfully connected to cluster"
+          else
+            echo "❌ Failed to connect to cluster"
+            exit 1
+          fi
+          
+          # Show current context
+          echo "📋 Current kubectl context:"
+          kubectl config current-context
+
+      - name: "✅ Verify Cluster Access"
+        run: |
+          echo "🔍 Verifying cluster access and permissions..."
+          
+          # Check nodes
+          echo "🖥️ Cluster nodes:"
+          kubectl get nodes -o wide
+          
+          # Check current namespace and permissions
+          echo "📍 Current namespace:"
+          kubectl config view --minify --output 'jsonpath={..namespace}' || echo 'default'
+          
+          # Test basic permissions
+          echo "🔐 Testing basic permissions:"
+          kubectl auth can-i create namespaces
+          kubectl auth can-i create deployments
+          kubectl auth can-i create services
+          kubectl auth can-i create configmaps
+          kubectl auth can-i create secrets
+          
+          echo "✅ Cluster access verification completed"
+
+      # ---------------------------------------------------------
+      # Install Monitoring Stack
+      # ---------------------------------------------------------
+      - name: "📦 Install Monitoring Stack"
+        if: github.event.inputs.action == 'install'
+        run: |
+          echo "📊 Installing Prometheus and Grafana monitoring stack..."
+          echo "🎯 Environment: ${{ github.event.inputs.environment }}"
+          echo "⏱️ Timeout: $HELM_TIMEOUT"
+          
+          # Make scripts executable
+          chmod +x monitoring/install-monitoring.sh
+          
+          # Set environment variables for the script
+          export ENVIRONMENT="${{ github.event.inputs.environment }}"
+          export CLUSTER_NAME="$EKS_CLUSTER_NAME"
+          
+          # Run installation script
+          cd monitoring
+          ./install-monitoring.sh
+          
+          echo "✅ Monitoring stack installation completed!"
+
+      # ---------------------------------------------------------
+      # Uninstall Monitoring Stack  
+      # ---------------------------------------------------------
+      - name: "🗑️ Uninstall Monitoring Stack"
+        if: github.event.inputs.action == 'uninstall'
+        run: |
+          echo "🗑️ Removing Prometheus and Grafana monitoring stack..."
+          echo "🎯 Environment: ${{ github.event.inputs.environment }}"
+          
+          # Make scripts executable
+          chmod +x monitoring/uninstall-monitoring.sh
+          
+          # Set environment variables for the script
+          export ENVIRONMENT="${{ github.event.inputs.environment }}"
+          export CLUSTER_NAME="$EKS_CLUSTER_NAME"
+          
+          # Run uninstallation script with auto-confirm
+          cd monitoring
+          echo "y" | ./uninstall-monitoring.sh
+          
+          echo "✅ Monitoring stack removal completed!"
+
+      # ---------------------------------------------------------
+      # Check Monitoring Status
+      # ---------------------------------------------------------
+      - name: "📋 Check Monitoring Status"
+        if: always()
+        run: |
+          echo "📊 === MONITORING STACK STATUS ==="
+          echo "🔖 Environment: ${{ github.event.inputs.environment || 'dev' }}"
+          echo "🎯 EKS Cluster: $EKS_CLUSTER_NAME"
+          echo "🌍 AWS Region: $AWS_REGION"
+          echo "⚡ Action Performed: ${{ github.event.inputs.action }}"
+          echo
+          
+          # Check if monitoring namespace exists
+          if kubectl get namespace $MONITORING_NAMESPACE &> /dev/null; then
+            echo "✅ Monitoring namespace exists"
+            echo
+            
+            # Check Helm releases in monitoring namespace
+            echo "🎡 Helm Releases in monitoring namespace:"
+            helm list -n $MONITORING_NAMESPACE || echo "No Helm releases found"
+            echo
+            
+            # Check pods in monitoring namespace
+            echo "🐳 Pods in monitoring namespace:"
+            kubectl get pods -n $MONITORING_NAMESPACE -o wide || echo "No pods found"
+            echo
+            
+            # Check services in monitoring namespace
+            echo "🌐 Services in monitoring namespace:"
+            kubectl get services -n $MONITORING_NAMESPACE || echo "No services found"
+            echo
+            
+            # Check persistent volumes
+            echo "💾 Persistent Volume Claims:"
+            kubectl get pvc -n $MONITORING_NAMESPACE || echo "No PVCs found"
+            echo
+            
+            # If Grafana is running, show access information
+            if kubectl get pods -n $MONITORING_NAMESPACE -l "app.kubernetes.io/name=grafana" | grep -q "Running"; then
+              echo "📊 Grafana Access Information:"
+              echo "   1. Port forward: kubectl port-forward -n $MONITORING_NAMESPACE svc/kube-prometheus-stack-grafana 3000:80"
+              echo "   2. URL: http://localhost:3000"
+              echo "   3. Username: admin"
+              echo "   4. Get password: kubectl get secret -n $MONITORING_NAMESPACE kube-prometheus-stack-grafana -o jsonpath=\"{.data.admin-password}\" | base64 --decode && echo"
+              echo
+            fi
+            
+            # If Prometheus is running, show access information
+            if kubectl get pods -n $MONITORING_NAMESPACE -l "app.kubernetes.io/name=prometheus" | grep -q "Running"; then
+              echo "🔍 Prometheus Access Information:"
+              echo "   1. Port forward: kubectl port-forward -n $MONITORING_NAMESPACE svc/kube-prometheus-stack-prometheus 9090:9090"
+              echo "   2. URL: http://localhost:9090"
+              echo "   3. Check targets: http://localhost:9090/targets"
+              echo
+            fi
+          else
+            echo "❌ Monitoring namespace not found"
+            echo "💡 Run this workflow with action 'install' to deploy monitoring stack"
+          fi
+
+      # ---------------------------------------------------------
+      # Generate Monitoring Report
+      # ---------------------------------------------------------
+      - name: "📊 Generate Monitoring Report"
+        if: always()
+        run: |
+          echo "# 📊 Monitoring Stack Deployment Report" > monitoring-report.md
+          echo "" >> monitoring-report.md
+          echo "**Date:** $(date -u)" >> monitoring-report.md
+          echo "**Environment:** ${{ github.event.inputs.environment || 'dev' }}" >> monitoring-report.md
+          echo "**Action:** ${{ github.event.inputs.action }}" >> monitoring-report.md
+          echo "**EKS Cluster:** $EKS_CLUSTER_NAME" >> monitoring-report.md
+          echo "**AWS Region:** $AWS_REGION" >> monitoring-report.md
+          echo "**Workflow Run:** ${{ github.run_id }}" >> monitoring-report.md
+          echo "" >> monitoring-report.md
+          
+          # Add status information
+          if kubectl get namespace $MONITORING_NAMESPACE &> /dev/null; then
+            echo "## ✅ Monitoring Stack Status: ACTIVE" >> monitoring-report.md
+            echo "" >> monitoring-report.md
+            echo "### Components:" >> monitoring-report.md
+            echo '```' >> monitoring-report.md
+            kubectl get pods -n $MONITORING_NAMESPACE >> monitoring-report.md 2>/dev/null || echo "No pods found" >> monitoring-report.md
+            echo '```' >> monitoring-report.md
+            echo "" >> monitoring-report.md
+            echo "### Services:" >> monitoring-report.md
+            echo '```' >> monitoring-report.md
+            kubectl get svc -n $MONITORING_NAMESPACE >> monitoring-report.md 2>/dev/null || echo "No services found" >> monitoring-report.md
+            echo '```' >> monitoring-report.md
+          else
+            echo "## ❌ Monitoring Stack Status: NOT INSTALLED" >> monitoring-report.md
+          fi
+          
+          echo "" >> monitoring-report.md
+          echo "### Quick Access Commands:" >> monitoring-report.md
+          echo "" >> monitoring-report.md
+          echo "**Grafana:**" >> monitoring-report.md
+          echo '```bash' >> monitoring-report.md
+          echo "kubectl port-forward -n $MONITORING_NAMESPACE svc/kube-prometheus-stack-grafana 3000:80" >> monitoring-report.md
+          echo '```' >> monitoring-report.md
+          echo "" >> monitoring-report.md
+          echo "**Prometheus:**" >> monitoring-report.md
+          echo '```bash' >> monitoring-report.md
+          echo "kubectl port-forward -n $MONITORING_NAMESPACE svc/kube-prometheus-stack-prometheus 9090:9090" >> monitoring-report.md
+          echo '```' >> monitoring-report.md
+          echo "" >> monitoring-report.md
+          echo "**Get Grafana Password:**" >> monitoring-report.md
+          echo '```bash' >> monitoring-report.md
+          echo "kubectl get secret -n $MONITORING_NAMESPACE kube-prometheus-stack-grafana -o jsonpath=\"{.data.admin-password}\" | base64 --decode && echo" >> monitoring-report.md
+          echo '```' >> monitoring-report.md
+          
+          echo "📝 Monitoring report generated: monitoring-report.md"
+
+      # ---------------------------------------------------------
+      # Upload Report Artifact
+      # ---------------------------------------------------------
+      - name: "📤 Upload Monitoring Report"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitoring-report-${{ github.event.inputs.environment }}-${{ github.run_id }}
+          path: monitoring-report.md
+          retention-days: 30
+
+      # ---------------------------------------------------------
+      # Final Status Notification
+      # ---------------------------------------------------------
+      - name: "🎉 Installation Success Notification"
+        if: success() && github.event.inputs.action == 'install'
+        run: |
+          echo "✅ Monitoring Stack Successfully Installed!"
+          echo "🎯 Environment: ${{ github.event.inputs.environment }}"
+          echo "🏷️ EKS Cluster: $EKS_CLUSTER_NAME"
+          echo ""
+          echo "📊 Next Steps:"
+          echo "1. Access Grafana: kubectl port-forward -n $MONITORING_NAMESPACE svc/kube-prometheus-stack-grafana 3000:80"
+          echo "2. Open http://localhost:3000"
+          echo "3. Login with admin/[get password from secret]"
+          echo "4. Explore pre-built Kubernetes dashboards"
+          echo ""
+          echo "🔍 Prometheus: kubectl port-forward -n $MONITORING_NAMESPACE svc/kube-prometheus-stack-prometheus 9090:9090"
+
+      - name: "✅ Uninstallation Success Notification"
+        if: success() && github.event.inputs.action == 'uninstall'
+        run: |
+          echo "✅ Monitoring Stack Successfully Removed!"
+          echo "🎯 Environment: ${{ github.event.inputs.environment }}"
+          echo "🏷️ EKS Cluster: $EKS_CLUSTER_NAME"
+          echo ""
+          echo "🗑️ Removed Components:"
+          echo "- Prometheus Server"
+          echo "- Grafana Dashboards"
+          echo "- AlertManager"
+          echo "- Node Exporter"
+          echo "- kube-state-metrics"
+          echo "- Prometheus Operator"
+          echo ""
+          echo "💡 To reinstall: Run this workflow again with action 'install'"
+
+      - name: "🚨 Failure Notification"
+        if: failure()
+        run: |
+          echo "❌ Monitoring Stack Operation Failed!"
+          echo "🎯 Environment: ${{ github.event.inputs.environment }}"
+          echo "⚡ Action: ${{ github.event.inputs.action }}"
+          echo "🏷️ EKS Cluster: $EKS_CLUSTER_NAME"
+          echo ""
+          echo "🔍 Troubleshooting Steps:"
+          echo "1. Check the logs above for specific error messages"
+          echo "2. Verify EKS cluster is accessible"
+          echo "3. Check AWS credentials and permissions"
+          echo "4. Verify Helm is properly installed"
+          echo "5. Check if resources already exist (for install) or don't exist (for uninstall)"
+          echo ""
+          echo "📋 Get current status:"
+          echo "kubectl get all -n $MONITORING_NAMESPACE"
+          echo "helm list -n $MONITORING_NAMESPACE"
