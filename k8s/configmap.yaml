@@ -6,8 +6,8 @@ metadata:
     app: kudos-app
     component: configuration
 data:
-  # Frontend environment variables
-  VITE_API_URL: "/api"
+  # Frontend environment variables - empty string so /api/kudos works directly
+  VITE_API_URL: ""
   
   # Backend environment variables  
   PORT: "3001"

@@ -7,8 +7,8 @@ RUN npm ci --silent
 
 # Copy source and build with environment variable
 COPY . .
-# Set production API URL for build
-ENV VITE_API_URL=/api
+# Set empty API URL so /api/kudos works directly with nginx proxy
+ENV VITE_API_URL=""
 RUN npm run build
 
 FROM nginx:stable-alpine
