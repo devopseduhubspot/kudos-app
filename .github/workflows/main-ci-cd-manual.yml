@@ -32,8 +32,8 @@ on:
 env:
   AWS_REGION: us-east-1
   EKS_CLUSTER_NAME: kudos-app-${{ github.event.inputs.environment || 'dev' }}
-  ECR_REPOSITORY_FRONTEND: kudos-app-${{ github.event.inputs.environment || 'dev' }}
-  ECR_REPOSITORY_BACKEND: kudos-app-backend-${{ github.event.inputs.environment || 'dev' }}
+  ECR_REPOSITORY_FRONTEND: kudos-app-${{ github.event.inputs.environment || 'dev' }}-frontend
+  ECR_REPOSITORY_BACKEND: kudos-app-${{ github.event.inputs.environment || 'dev' }}-backend
   IMAGE_TAG: ${{ github.sha }}
   BRANCH_NAME: ${{ github.ref_name }}
   BUILD_DATETIME: ${{ github.run_id }}-$(date +'%Y%m%d-%H%M%S')
@@ -168,36 +168,26 @@ jobs:
 
       - name: "📦 Create ECR Repositories (if not exists)"
         run: |
-          echo "🔍 Checking ECR repositories..."
+          echo "🔍 Verifying ECR repositories (managed by Terraform)..."
           
-          # Create frontend repository
+          # Verify frontend repository exists
           echo "Frontend repository: $ECR_REPOSITORY_FRONTEND"
           if aws ecr describe-repositories --repository-names $ECR_REPOSITORY_FRONTEND --region $AWS_REGION 2>/dev/null; then
-            echo "✅ Frontend ECR repository already exists: $ECR_REPOSITORY_FRONTEND"
+            echo "✅ Frontend ECR repository exists: $ECR_REPOSITORY_FRONTEND"
           else
-            echo "📦 Creating frontend ECR repository: $ECR_REPOSITORY_FRONTEND"
-            aws ecr create-repository --repository-name $ECR_REPOSITORY_FRONTEND --region $AWS_REGION
-            if [ $? -eq 0 ]; then
-              echo "✅ Frontend ECR repository created successfully"
-            else
-              echo "❌ Failed to create frontend ECR repository"
-              exit 1
-            fi
+            echo "❌ Frontend ECR repository not found: $ECR_REPOSITORY_FRONTEND"
+            echo "💡 Please run 'terraform apply' first to create ECR repositories"
+            exit 1
           fi
           
-          # Create backend repository  
+          # Verify backend repository exists
           echo "Backend repository: $ECR_REPOSITORY_BACKEND"
           if aws ecr describe-repositories --repository-names $ECR_REPOSITORY_BACKEND --region $AWS_REGION 2>/dev/null; then
-            echo "✅ Backend ECR repository already exists: $ECR_REPOSITORY_BACKEND"
+            echo "✅ Backend ECR repository exists: $ECR_REPOSITORY_BACKEND"
           else
-            echo "📦 Creating backend ECR repository: $ECR_REPOSITORY_BACKEND"
-            aws ecr create-repository --repository-name $ECR_REPOSITORY_BACKEND --region $AWS_REGION
-            if [ $? -eq 0 ]; then
-              echo "✅ Backend ECR repository created successfully"
-            else
-              echo "❌ Failed to create backend ECR repository"
-              exit 1
-            fi
+            echo "❌ Backend ECR repository not found: $ECR_REPOSITORY_BACKEND"
+            echo "💡 Please run 'terraform apply' first to create ECR repositories"
+            exit 1
           fi
 
       - name: "🏗️ Login to Amazon ECR"
