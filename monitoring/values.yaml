@@ -1,0 +1,375 @@
+# =============================================================================
+# kube-prometheus-stack Helm Values Configuration
+# =============================================================================
+# This file customizes the Prometheus and Grafana installation for your
+# Kubernetes cluster. It includes production-like settings that are 
+# beginner-friendly and suitable for learning and demo purposes.
+# =============================================================================
+
+# Global settings applied to all components
+global:
+  rbac:
+    create: true
+    pspEnabled: false
+
+# =============================================================================
+# Prometheus Configuration
+# =============================================================================
+prometheus:
+  enabled: true
+  
+  prometheusSpec:
+    # Data retention period (how long to keep metrics)
+    retention: 7d
+    retentionSize: "10GB"
+    
+    # Resource requests and limits for Prometheus pods
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+    
+    # Storage configuration for Prometheus data
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp2  # AWS EBS storage class
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 20Gi
+    
+    # Enable service discovery for Kubernetes services
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    
+    # Additional scrape configs for custom applications
+    additionalScrapeConfigs:
+      # Example: Scrape metrics from your Kudos application
+      - job_name: 'kudos-app-backend'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          # Only scrape pods with the correct labels
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: kudos-backend
+          # Set the metrics path (default is /metrics)
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          # Use the port specified in annotations, or default to the first container port
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          # Add useful labels
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+
+# =============================================================================
+# Grafana Configuration
+# =============================================================================
+grafana:
+  enabled: true
+  
+  # Admin user configuration
+  adminPassword: "admin123"  # Change this in production!
+  
+  # Grafana resource limits
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  
+  # Persistent storage for Grafana dashboards and settings
+  persistence:
+    enabled: true
+    type: pvc
+    storageClassName: gp2
+    size: 5Gi
+    accessModes:
+      - ReadWriteOnce
+  
+  # Grafana configuration
+  grafana.ini:
+    server:
+      domain: localhost
+      root_url: http://localhost:3000
+    auth.anonymous:
+      enabled: false
+    security:
+      admin_user: admin
+      admin_password: admin123
+    users:
+      allow_sign_up: false
+      auto_assign_org: true
+      auto_assign_org_role: Viewer
+  
+  # Additional data sources (besides Prometheus which is auto-configured)
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      url: http://loki:3100
+      access: proxy
+      isDefault: false
+      editable: true
+  
+  # Dashboard providers configuration
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+      - name: 'default'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/default
+      - name: 'kubernetes'
+        orgId: 1
+        folder: 'Kubernetes'
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/kubernetes
+  
+  # Custom dashboards
+  dashboards:
+    kubernetes:
+      # Kubernetes cluster overview dashboard
+      k8s-cluster:
+        gnetId: 7249
+        revision: 1
+        datasource: Prometheus
+      # Node exporter dashboard
+      node-exporter:
+        gnetId: 1860
+        revision: 27
+        datasource: Prometheus
+      # Kubernetes deployment dashboard
+      k8s-deployments:
+        gnetId: 8588
+        revision: 1
+        datasource: Prometheus
+  
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 3000
+
+# =============================================================================
+# AlertManager Configuration
+# =============================================================================
+alertmanager:
+  enabled: true
+  
+  alertmanagerSpec:
+    # Resource limits for AlertManager
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+    
+    # Storage for AlertManager data
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp2
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+  
+  # AlertManager configuration
+  config:
+    global:
+      smtp_smarthost: 'localhost:587'
+      smtp_from: 'alerts@yourcompany.com'
+    
+    route:
+      group_by: ['alertname', 'cluster', 'service']
+      group_wait: 10s
+      group_interval: 10s
+      repeat_interval: 1h
+      receiver: 'web.hook'
+      routes:
+      - match:
+          alertname: Watchdog
+        receiver: 'null'
+      - match_re:
+          severity: critical|warning
+        receiver: 'web.hook'
+    
+    receivers:
+    - name: 'null'
+    - name: 'web.hook'
+      webhook_configs:
+      - url: 'http://localhost:5001/webhook'
+        send_resolved: true
+
+# =============================================================================
+# Node Exporter Configuration
+# =============================================================================
+nodeExporter:
+  enabled: true
+  
+  # Service monitor for node exporter
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    
+# =============================================================================
+# kube-state-metrics Configuration
+# =============================================================================
+kube-state-metrics:
+  enabled: true
+  
+  # Collect metrics from all Kubernetes objects
+  collectors:
+    - certificatesigningrequests
+    - configmaps
+    - cronjobs
+    - daemonsets
+    - deployments
+    - endpoints
+    - horizontalpodautoscalers
+    - ingresses
+    - jobs
+    - limitranges
+    - mutatingwebhookconfigurations
+    - namespaces
+    - networkpolicies
+    - nodes
+    - persistentvolumeclaims
+    - persistentvolumes
+    - poddisruptionbudgets
+    - pods
+    - replicasets
+    - replicationcontrollers
+    - resourcequotas
+    - secrets
+    - services
+    - statefulsets
+    - storageclasses
+    - validatingwebhookconfigurations
+    - volumeattachments
+
+# =============================================================================
+# Prometheus Operator Configuration
+# =============================================================================
+prometheusOperator:
+  enabled: true
+  
+  # Resource limits for the operator
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  
+  # Service monitor for the operator itself
+  serviceMonitor:
+    enabled: true
+
+# =============================================================================
+# Default Rules and Alerts
+# =============================================================================
+defaultRules:
+  create: true
+  rules:
+    alertmanager: true
+    etcd: false  # Usually not accessible in managed clusters
+    configReloaders: true
+    general: true
+    k8s: true
+    kubeApiserverAvailability: true
+    kubeApiserverBurnrate: true
+    kubeApiserverHistogram: true
+    kubeApiserverSlos: true
+    kubelet: true
+    kubeProxy: false  # Often not available in managed clusters
+    kubePrometheusGeneral: true
+    kubePrometheusNodeRecording: true
+    kubernetesApps: true
+    kubernetesResources: true
+    kubernetesStorage: true
+    kubernetesSystem: true
+    kubeScheduler: false  # Usually not accessible in managed clusters
+    kubeStateMetrics: true
+    network: true
+    node: true
+    nodeExporterAlerting: true
+    nodeExporterRecording: true
+    prometheus: true
+    prometheusOperator: true
+
+# =============================================================================
+# Additional ServiceMonitors
+# =============================================================================
+# Enable automatic discovery of services with prometheus annotations
+serviceMonitor:
+  enabled: true
+  
+# =============================================================================
+# Security and RBAC
+# =============================================================================
+rbac:
+  create: true
+
+serviceAccount:
+  create: true
+
+# =============================================================================
+# Custom Annotations for AWS Load Balancer (if needed)
+# =============================================================================
+# Uncomment and modify if you want to expose Grafana via AWS Load Balancer
+# ingress:
+#   enabled: true
+#   annotations:
+#     kubernetes.io/ingress.class: alb
+#     alb.ingress.kubernetes.io/scheme: internet-facing
+#     alb.ingress.kubernetes.io/target-type: ip
+#   hosts:
+#     - grafana.yourdomain.com
+#   tls: []
+
+# =============================================================================
+# Cleanup Jobs
+# =============================================================================
+cleanPrometheusOperatorObjectNames: true
+
+# =============================================================================
+# Component Enablement Summary
+# =============================================================================
+# ✅ Prometheus Server - Metrics collection and storage (7 days retention)
+# ✅ Grafana - Visualization with persistent storage and pre-configured dashboards
+# ✅ AlertManager - Alert routing and notifications
+# ✅ Node Exporter - System metrics from all cluster nodes
+# ✅ kube-state-metrics - Kubernetes object metrics
+# ✅ Prometheus Operator - Automatic management of Prometheus instances
+# ✅ Default Alert Rules - Pre-configured alerts for common issues
+# ✅ Service Discovery - Automatic discovery of Kubernetes services
+# =============================================================================
