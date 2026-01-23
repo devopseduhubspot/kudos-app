@@ -6,9 +6,9 @@ output "cluster_name" {
   value       = aws_eks_cluster.main.name
 }
 
-output "ecr_repository_url" {
+output "ecr_frontend_repository_url" {
   description = "Where your frontend Docker images are stored"
-  value       = aws_ecr_repository.app.repository_url
+  value       = aws_ecr_repository.frontend.repository_url
 }
 
 output "ecr_backend_repository_url" {

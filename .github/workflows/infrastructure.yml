@@ -112,39 +112,6 @@ jobs:
               body: output
             })
 
-      - name: 🔍 Check and Import Existing ECR Repositories
-        if: github.event.inputs.action == 'apply' && steps.plan.outcome == 'success'
-        run: |
-          echo "🔍 Checking for existing ECR repositories..."
-          
-          # Define repository names based on environment
-          FRONTEND_REPO="${{ env.TF_VAR_app_name }}"
-          BACKEND_REPO="${{ env.TF_VAR_app_name }}-backend"
-          
-          echo "Frontend repo: $FRONTEND_REPO"
-          echo "Backend repo: $BACKEND_REPO"
-          
-          # Check and import frontend repository if it exists
-          if aws ecr describe-repositories --repository-names $FRONTEND_REPO --region ${{ env.AWS_REGION }} 2>/dev/null; then
-            echo "📦 Found existing frontend repository: $FRONTEND_REPO"
-            echo "🔄 Importing into Terraform state..."
-            terraform import aws_ecr_repository.app $FRONTEND_REPO || echo "⚠️ Import failed or already imported"
-          else
-            echo "✅ Frontend repository $FRONTEND_REPO does not exist - will be created"
-          fi
-          
-          # Check and import backend repository if it exists  
-          if aws ecr describe-repositories --repository-names $BACKEND_REPO --region ${{ env.AWS_REGION }} 2>/dev/null; then
-            echo "📦 Found existing backend repository: $BACKEND_REPO"
-            echo "🔄 Importing into Terraform state..."
-            terraform import aws_ecr_repository.backend $BACKEND_REPO || echo "⚠️ Import failed or already imported"
-          else
-            echo "✅ Backend repository $BACKEND_REPO does not exist - will be created"
-          fi
-          
-          echo "🔄 Re-running plan after imports..."
-          terraform plan -no-color -out=tfplan
-
       - name: ✅ Terraform Apply
         if: github.event.inputs.action == 'apply' && steps.plan.outcome == 'success'
         run: |

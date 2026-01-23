@@ -1,40 +1,109 @@
-# Container Registry - This stores your application images
-# Think of this as a place to store your packaged app
+# ECR Repository for Frontend
+resource "aws_ecr_repository" "frontend" {
+  name                 = "${var.app_name}-frontend"
+  image_tag_mutability = "MUTABLE"
+  force_delete         = true  # This allows deletion even with images
 
-# Create a private repository for your Docker images (Frontend)
-resource "aws_ecr_repository" "app" {
-  name         = "${var.app_name}-${var.environment}"
-  force_delete = true  # Allow deletion even with images
-
-  tags = {
-    Name = "${var.app_name}-${var.environment}-frontend-repository"
+  image_scanning_configuration {
+    scan_on_push = true
   }
 
-  lifecycle {
-    # Prevent destruction if repository has images
-    prevent_destroy = false
-    # Ignore changes to tags that might be managed externally
-    ignore_changes = [
-      image_scanning_configuration,
-    ]
+  tags = {
+    Name        = "${var.app_name}-frontend-ecr"
+    Environment = var.environment
+    Component   = "frontend"
+    ManagedBy   = "terraform"
   }
 }
 
-# Create a private repository for backend images  
+# ECR Repository for Backend
 resource "aws_ecr_repository" "backend" {
-  name         = "${var.app_name}-backend-${var.environment}"
-  force_delete = true  # Allow deletion even with images
+  name                 = "${var.app_name}-backend"
+  image_tag_mutability = "MUTABLE"
+  force_delete         = true  # This allows deletion even with images
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
 
   tags = {
-    Name = "${var.app_name}-backend-${var.environment}-repository"
+    Name        = "${var.app_name}-backend-ecr"
+    Environment = var.environment
+    Component   = "backend"
+    ManagedBy   = "terraform"
   }
+}
 
-  lifecycle {
-    # Prevent destruction if repository has images
-    prevent_destroy = false
-    # Ignore changes to tags that might be managed externally
-    ignore_changes = [
-      image_scanning_configuration,
+# Data source to get current AWS account ID
+data "aws_caller_identity" "current" {}
+
+# Lifecycle policies (optional - for automatic cleanup)
+resource "aws_ecr_lifecycle_policy" "frontend_policy" {
+  repository = aws_ecr_repository.frontend.name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Keep last 10 images"
+        selection = {
+          tagStatus     = "tagged"
+          tagPrefixList = ["v", "latest"]
+          countType     = "imageCountMoreThan"
+          countNumber   = 10
+        }
+        action = {
+          type = "expire"
+        }
+      },
+      {
+        rulePriority = 2
+        description  = "Delete untagged images older than 1 day"
+        selection = {
+          tagStatus   = "untagged"
+          countType   = "sinceImagePushed"
+          countUnit   = "days"
+          countNumber = 1
+        }
+        action = {
+          type = "expire"
+        }
+      }
     ]
-  }
+  })
+}
+
+resource "aws_ecr_lifecycle_policy" "backend_policy" {
+  repository = aws_ecr_repository.backend.name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Keep last 10 images"
+        selection = {
+          tagStatus     = "tagged"
+          tagPrefixList = ["v", "latest"]
+          countType     = "imageCountMoreThan"
+          countNumber   = 10
+        }
+        action = {
+          type = "expire"
+        }
+      },
+      {
+        rulePriority = 2
+        description  = "Delete untagged images older than 1 day"
+        selection = {
+          tagStatus   = "untagged"
+          countType   = "sinceImagePushed"
+          countUnit   = "days"
+          countNumber = 1
+        }
+        action = {
+          type = "expire"
+        }
+      }
+    ]
+  })
 }

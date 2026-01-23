@@ -104,31 +104,9 @@ function New-DynamoDBTable {
     return $true
 }
 
-# Function to create ECR repository
-function New-ECRRepository {
-    param([string]$RepoName)
-    
-    Write-Host "Checking ECR repository: $RepoName..." -ForegroundColor Yellow
-    
-    # Check if repository exists
-    aws ecr describe-repositories --repository-names $RepoName --region $AWSRegion 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "ECR repository already exists: $RepoName" -ForegroundColor Green
-        return $true
-    }
-    
-    Write-Host "Creating ECR repository: $RepoName..." -ForegroundColor Yellow
-    
-    # Create repository
-    aws ecr create-repository --repository-name $RepoName --region $AWSRegion 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "Failed to create ECR repository: $RepoName" -ForegroundColor Red
-        return $false
-    }
-    
-    Write-Host "ECR repository created successfully: $RepoName" -ForegroundColor Green
-    return $true
-}
+# ECR Repository Management is now handled by Terraform
+# ECR repositories are automatically created when running terraform apply
+# and destroyed when running terraform destroy
 
 # Function to update Terraform backend
 function Update-Backend {
@@ -221,29 +199,8 @@ function Remove-DynamoDBTable {
     }
 }
 
-# Function to delete ECR repository
-function Remove-ECRRepository {
-    param([string]$RepoName)
-    
-    Write-Host "Deleting ECR repository: $RepoName..." -ForegroundColor Yellow
-    
-    # Check if repository exists
-    aws ecr describe-repositories --repository-names $RepoName --region $AWSRegion 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "ECR repository does not exist: $RepoName" -ForegroundColor Yellow
-        return $true
-    }
-    
-    # Delete repository with force (deletes all images)
-    aws ecr delete-repository --repository-name $RepoName --region $AWSRegion --force
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "ECR repository deleted: $RepoName" -ForegroundColor Green
-        return $true
-    } else {
-        Write-Host "Failed to delete ECR repository: $RepoName" -ForegroundColor Red
-        return $false
-    }
-}
+# ECR Repository Management is now handled by Terraform
+# ECR repositories are automatically destroyed when running terraform destroy
 
 # Main setup function
 function Invoke-Setup {
@@ -257,8 +214,6 @@ function Invoke-Setup {
     # Generate unique bucket name
     $bucketName = "terraform-state-$ProjectName-$(Get-Random)"
     $tableName = "terraform-locks"
-    $ecrRepoFrontend = "$ProjectName-$Environment"
-    $ecrRepoBackend = "$ProjectName-backend-$Environment"
     
     Write-Host ""
     Write-Host "Configuration:" -ForegroundColor Cyan
@@ -267,8 +222,7 @@ function Invoke-Setup {
     Write-Host "  Region: $AWSRegion" -ForegroundColor White
     Write-Host "  S3 Bucket: $bucketName" -ForegroundColor White
     Write-Host "  DynamoDB Table: $tableName" -ForegroundColor White
-    Write-Host "  ECR Repository (Frontend): $ecrRepoFrontend" -ForegroundColor White
-    Write-Host "  ECR Repository (Backend): $ecrRepoBackend" -ForegroundColor White
+    Write-Host "  ECR Repositories: Managed by Terraform" -ForegroundColor Gray
     Write-Host ""
     
     if (-not $SkipConfirmation) {
@@ -286,16 +240,7 @@ function Invoke-Setup {
     $dynamoSuccess = New-DynamoDBTable -TableName $tableName
     if (-not $dynamoSuccess) { return }
     
-    # Create ECR repositories for both frontend and backend
-    $ecrFrontendSuccess = New-ECRRepository -RepoName $ecrRepoFrontend
-    if (-not $ecrFrontendSuccess) {
-        Write-Host "Warning: Frontend ECR repository creation failed, but continuing..." -ForegroundColor Yellow
-    }
-    
-    $ecrBackendSuccess = New-ECRRepository -RepoName $ecrRepoBackend
-    if (-not $ecrBackendSuccess) {
-        Write-Host "Warning: Backend ECR repository creation failed, but continuing..." -ForegroundColor Yellow
-    }
+    # ECR repositories will be created automatically by Terraform
     
     # Update backend
     Update-Backend -BucketName $bucket
@@ -309,20 +254,16 @@ function Invoke-Setup {
     Write-Host "  TERRAFORM_STATE_BUCKET = $bucket" -ForegroundColor White
     Write-Host "" 
     
-    # Get ECR registry URL
-    $awsAccount = aws sts get-caller-identity --query 'Account' --output text 2>$null
-    if ($awsAccount) {
-        $ecrRegistry = "$awsAccount.dkr.ecr.$AWSRegion.amazonaws.com"
-        Write-Host "💡 Your ECR Repositories:" -ForegroundColor Cyan
-        Write-Host "   Frontend: $ecrRegistry/$ecrRepoFrontend" -ForegroundColor White
-        Write-Host "   Backend:  $ecrRegistry/$ecrRepoBackend" -ForegroundColor White
-        Write-Host "   (No secret needed - GitHub Actions can retrieve this automatically)" -ForegroundColor Gray
-    }
+    Write-Host "💡 ECR Repositories will be created by Terraform:" -ForegroundColor Cyan
+    Write-Host "   Run 'terraform apply' to create ECR repositories automatically" -ForegroundColor White
+    Write-Host "   (No manual ECR setup needed)" -ForegroundColor Gray
+    
     Write-Host ""
     Write-Host "Next Steps:" -ForegroundColor Cyan
     Write-Host "  1. Add the above secrets to your GitHub repository" -ForegroundColor White
     Write-Host "  2. Run 'terraform init' in the terraform directory" -ForegroundColor White
-    Write-Host "  3. Test your GitHub Actions workflows" -ForegroundColor White
+    Write-Host "  3. Run 'terraform apply' to create all infrastructure (including ECR)" -ForegroundColor White
+    Write-Host "  4. Test your GitHub Actions workflows" -ForegroundColor White
 }
 
 # Main cleanup function
@@ -341,7 +282,7 @@ function Invoke-Cleanup {
         Write-Host "Resources to be deleted:" -ForegroundColor Yellow
         Write-Host "  - All S3 buckets matching: terraform-state-$ProjectName-*" -ForegroundColor White
         Write-Host "  - DynamoDB table: terraform-locks" -ForegroundColor White
-        Write-Host "  - ECR repositories matching: $ProjectName-*" -ForegroundColor White
+        Write-Host "  - ECR repositories: Use 'terraform destroy' to delete" -ForegroundColor Gray
         Write-Host ""
         $confirm = Read-Host "Type 'DELETE' to confirm"
         if ($confirm -ne "DELETE") {
@@ -350,17 +291,8 @@ function Invoke-Cleanup {
         }
     }
     
-    # Delete ECR repositories (all environments and types)
-    Write-Host "Finding ECR repositories to delete..." -ForegroundColor Yellow
-    $repoList = aws ecr describe-repositories --region $AWSRegion --query "repositories[?(starts_with(repositoryName, '$ProjectName-') || starts_with(repositoryName, '$ProjectName-backend-'))].repositoryName" --output text 2>$null
-    if ($LASTEXITCODE -eq 0 -and $repoList) {
-        $repos = $repoList -split "\s+" | Where-Object { $_ -ne "" }
-        foreach ($repo in $repos) {
-            Remove-ECRRepository -RepoName $repo
-        }
-    } else {
-        Write-Host "No ECR repositories found matching: $ProjectName-* or $ProjectName-backend-*" -ForegroundColor Yellow
-    }
+    # ECR repositories will be deleted by Terraform destroy
+    Write-Host "ECR repositories will be deleted by 'terraform destroy'" -ForegroundColor Cyan
     
     # Find and delete S3 buckets
     Write-Host "Finding S3 buckets to delete..." -ForegroundColor Yellow
