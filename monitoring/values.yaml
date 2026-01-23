@@ -83,8 +83,8 @@ prometheus:
 grafana:
   enabled: true
   
-  # Admin user configuration
-  adminPassword: "admin123"  # Change this in production!
+  # Admin user configuration - password will be auto-generated
+  # Use 'kubectl get secret monitoring-grafana -n monitoring -o jsonpath="{.data.admin-password}" | base64 --decode' to get password
   
   # Grafana resource limits
   resources:
@@ -113,7 +113,6 @@ grafana:
       enabled: false
     security:
       admin_user: admin
-      admin_password: admin123
     users:
       allow_sign_up: false
       auto_assign_org: true
