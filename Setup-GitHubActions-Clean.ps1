@@ -48,12 +48,15 @@ function New-S3Bucket {
         return $BucketName
     }
     
-    # Create bucket
-    aws s3 mb "s3://$BucketName" --region $AWSRegion
+    # Create bucket - capture output but return clean bucket name
+    $output = aws s3 mb "s3://$BucketName" --region $AWSRegion 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host "Failed to create S3 bucket" -ForegroundColor Red
+        Write-Host "Error: $output" -ForegroundColor Red
         return $null
     }
+    
+    Write-Host "S3 bucket creation output: $output" -ForegroundColor Gray
     
     # Enable versioning
     aws s3api put-bucket-versioning --bucket $BucketName --versioning-configuration Status=Enabled
@@ -65,6 +68,7 @@ function New-S3Bucket {
     Remove-Item "temp-encrypt.json" -Force
     
     Write-Host "S3 bucket created successfully: $BucketName" -ForegroundColor Green
+    # Return ONLY the bucket name, not the AWS CLI output
     return $BucketName
 }
 
