@@ -69,6 +69,76 @@ chmod +x port-forward-grafana.sh
 kubectl get secret -n monitoring kube-prometheus-stack-grafana -o jsonpath="{.data.admin-password}" | base64 --decode && echo
 ```
 
+## 📊 How to Access After Deployment
+
+### **Grafana Dashboard (Recommended)**
+Grafana provides the best visualization experience with pre-built dashboards.
+
+1. **Get the Auto-Generated Password:**
+   ```bash
+   kubectl get secret monitoring-grafana -n monitoring -o jsonpath="{.data.admin-password}" | base64 --decode
+   ```
+
+2. **Port-Forward to Access:**
+   ```bash
+   cd monitoring
+   ./port-forward-grafana.sh
+   ```
+   
+3. **Visit Grafana:**
+   - **URL**: http://localhost:3000
+   - **Username**: `admin`
+   - **Password**: Use the password from step 1
+
+4. **Explore Pre-Built Dashboards:**
+   - Navigate to **Dashboards → Browse**
+   - Check out **Kubernetes** folder for cluster metrics
+   - View **Node Exporter** dashboards for system metrics
+
+### **Prometheus Query Interface**
+Access the raw Prometheus interface for custom queries and debugging.
+
+1. **Port-Forward Prometheus:**
+   ```bash
+   kubectl port-forward -n monitoring svc/monitoring-kube-prometheus-prometheus 9090:9090
+   ```
+
+2. **Visit Prometheus:**
+   - **URL**: http://localhost:9090
+   - **Features Available:**
+     - Query metrics with PromQL
+     - View targets and service discovery
+     - Check alert rules and status
+     - Explore metrics catalog
+
+### **AlertManager Interface**
+Manage and view alerts (if any are triggered).
+
+1. **Port-Forward AlertManager:**
+   ```bash
+   kubectl port-forward -n monitoring svc/monitoring-kube-prometheus-alertmanager 9093:9093
+   ```
+
+2. **Visit AlertManager:**
+   - **URL**: http://localhost:9093
+   - View active alerts
+   - Manage alert routing
+   - Configure notification channels
+
+### **Quick Access Scripts**
+Use the provided convenience scripts:
+
+```bash
+# Access Grafana (recommended for daily use)
+./port-forward-grafana.sh
+
+# View all monitoring services
+kubectl get svc -n monitoring
+
+# Check pod status
+kubectl get pods -n monitoring
+```
+
 ## 📦 What Gets Installed
 
 | Component | Purpose | Metrics |
