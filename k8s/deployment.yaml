@@ -5,7 +5,7 @@ metadata:
   labels:
     app: kudos-frontend
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: kudos-frontend
@@ -32,11 +32,11 @@ spec:
               subPath: nginx.conf
           resources:
             requests: 
-              cpu: "100m"
-              memory: "128Mi" 
+              cpu: "50m"
+              memory: "64Mi" 
             limits:
-              cpu: "500m"
-              memory: "512Mi"
+              cpu: "200m"
+              memory: "256Mi"
       volumes:
         - name: nginx-config
           configMap:
@@ -49,7 +49,7 @@ metadata:
   labels:
     app: kudos-backend
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: kudos-backend
@@ -89,8 +89,8 @@ spec:
             periodSeconds: 5
           resources:
             requests: 
-              cpu: "100m"
-              memory: "128Mi" 
+              cpu: "50m"
+              memory: "64Mi" 
             limits:
-              cpu: "300m"
-              memory: "256Mi"
+              cpu: "150m"
+              memory: "128Mi"

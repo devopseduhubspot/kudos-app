@@ -23,16 +23,16 @@ prometheus:
     retention: 7d
     retentionSize: "10GB"
     
-    # Resource requests and limits for Prometheus pods
+    # Resource requests and limits for Prometheus pods (reduced for t3.small)
     resources:
       requests:
-        cpu: 100m
-        memory: 512Mi
+        cpu: 50m
+        memory: 256Mi
       limits:
-        cpu: 1000m
-        memory: 2Gi
+        cpu: 500m
+        memory: 1Gi
     
-    # Storage configuration for Prometheus data
+    # Storage configuration for Prometheus data (reduced size)
     storageSpec:
       volumeClaimTemplate:
         spec:
@@ -40,7 +40,7 @@ prometheus:
           accessModes: ["ReadWriteOnce"]
           resources:
             requests:
-              storage: 20Gi
+              storage: 10Gi
     
     # Enable service discovery for Kubernetes services
     serviceMonitorSelectorNilUsesHelmValues: false
@@ -86,13 +86,13 @@ grafana:
   # Admin user configuration - password will be auto-generated
   # Use 'kubectl get secret monitoring-grafana -n monitoring -o jsonpath="{.data.admin-password}" | base64 --decode' to get password
   
-  # Grafana resource limits
+  # Grafana resource limits (reduced for t3.small)
   resources:
     requests:
-      cpu: 100m
-      memory: 128Mi
+      cpu: 50m
+      memory: 64Mi
     limits:
-      cpu: 500m
+      cpu: 200m
       memory: 256Mi
   
   # Persistent storage for Grafana dashboards and settings
