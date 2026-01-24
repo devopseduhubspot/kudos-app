@@ -147,7 +147,44 @@ fi
 echo
 
 # =============================================================================
-# 5. Clean Up Remaining Resources
+# 5. Clean Up Persistent Volume Claims
+# =============================================================================
+print_status "💾 Handling Persistent Volume Claims..."
+
+# Check if PVCs exist
+PVC_COUNT=$(kubectl get pvc -n monitoring --no-headers 2>/dev/null | wc -l || echo "0")
+if [ "$PVC_COUNT" -gt 0 ]; then
+    print_warning "Found $PVC_COUNT Persistent Volume Claims in monitoring namespace:"
+    kubectl get pvc -n monitoring
+    echo
+    print_warning "⚠️  Deleting PVCs will permanently delete all monitoring data!"
+    echo
+    read -p "Do you want to delete PVCs and all monitoring data? (y/N): " -n 1 -r
+    echo
+    
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        print_status "Deleting Persistent Volume Claims..."
+        kubectl delete pvc --all -n monitoring --ignore-not-found=true
+        
+        # Wait for PVCs to be deleted
+        print_status "Waiting for PVC deletion..."
+        while [ "$(kubectl get pvc -n monitoring --no-headers 2>/dev/null | wc -l)" -gt 0 ]; do
+            echo -n "."
+            sleep 2
+        done
+        echo
+        print_success "All PVCs deleted successfully!"
+    else
+        print_status "Keeping PVCs and monitoring data"
+        print_warning "Note: PVCs will persist and retain monitoring data"
+    fi
+else
+    print_status "No PVCs found in monitoring namespace"
+fi
+echo
+
+# =============================================================================
+# 7. Clean Up Remaining Resources
 # =============================================================================
 print_status "🧹 Cleaning up remaining resources..."
 
@@ -175,7 +212,7 @@ print_success "Resource cleanup completed!"
 echo
 
 # =============================================================================
-# 6. Namespace Deletion
+# 8. Namespace Deletion
 # =============================================================================
 print_status "🗂️  Handling monitoring namespace..."
 echo
@@ -200,7 +237,7 @@ fi
 echo
 
 # =============================================================================
-# 7. Verification
+# 9. Verification
 # =============================================================================
 print_status "✅ Verifying removal..."
 
@@ -225,17 +262,18 @@ fi
 echo
 
 # =============================================================================
-# 8. Final Summary
+# 10. Final Summary
 # =============================================================================
 print_success "🎉 Monitoring Stack Removal Complete!"
 echo
 print_status "✅ Removed Components:"
 echo "   • Prometheus Server"
-echo "   • Grafana Dashboards"
+echo "   • Grafana Dashboards"  
 echo "   • AlertManager"
 echo "   • Node Exporter"
 echo "   • kube-state-metrics"
 echo "   • Prometheus Operator"
+echo "   • Persistent Volume Claims (if selected)"
 echo
 
 if [[ $REPLY =~ ^[Yy]$ ]]; then

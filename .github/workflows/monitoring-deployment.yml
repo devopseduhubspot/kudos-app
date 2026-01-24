@@ -272,13 +272,68 @@ jobs:
           echo "✅ Monitoring stack installation completed!"
 
       # ---------------------------------------------------------
+      # ---------------------------------------------------------
+      # PVC Status Check and Management
+      # ---------------------------------------------------------
+      - name: "💾 PVC Status and Management"
+        if: always()
+        run: |
+          echo "💾 === PERSISTENT VOLUME CLAIMS STATUS ==="
+          
+          # Check if monitoring namespace exists
+          if kubectl get namespace $MONITORING_NAMESPACE &> /dev/null; then
+            echo "📊 Checking PVCs in $MONITORING_NAMESPACE namespace..."
+            
+            # List all PVCs with detailed information
+            PVC_COUNT=$(kubectl get pvc -n $MONITORING_NAMESPACE --no-headers 2>/dev/null | wc -l || echo "0")
+            
+            if [ "$PVC_COUNT" -gt 0 ]; then
+              echo "✅ Found $PVC_COUNT Persistent Volume Claims:"
+              echo
+              kubectl get pvc -n $MONITORING_NAMESPACE -o wide
+              echo
+              
+              # Show PVC storage usage if possible
+              echo "📈 PVC Storage Details:"
+              kubectl describe pvc -n $MONITORING_NAMESPACE | grep -E "Name:|Status:|Volume:|Capacity:|Access Modes:|Storage Class:"
+              echo
+              
+              # Show related persistent volumes
+              echo "💽 Related Persistent Volumes:"
+              kubectl get pv | head -1  # Header
+              kubectl get pvc -n $MONITORING_NAMESPACE --no-headers | awk '{print $3}' | while read pv; do
+                if [ "$pv" != "<none>" ] && [ "$pv" != "" ]; then
+                  kubectl get pv "$pv" --no-headers 2>/dev/null || true
+                fi
+              done
+              echo
+              
+            else
+              echo "ℹ️  No PVCs found in $MONITORING_NAMESPACE namespace"
+            fi
+          else
+            echo "ℹ️  Monitoring namespace does not exist - no PVCs to check"
+          fi
+          
+          # PVC cleanup reminder for uninstall operations
+          if [ "${{ github.event.inputs.action }}" == "uninstall" ]; then
+            echo "🗑️  PVC CLEANUP INFORMATION:"
+            echo "   • PVCs contain all monitoring data (metrics, dashboards, etc.)"
+            echo "   • The uninstall script will prompt for PVC deletion"  
+            echo "   • Choose 'y' to permanently delete all monitoring data"
+            echo "   • Choose 'n' to keep PVCs for potential data recovery"
+            echo
+          fi
+
+      # ---------------------------------------------------------
       # Uninstall Monitoring Stack  
       # ---------------------------------------------------------
-      - name: "🗑️ Uninstall Monitoring Stack"
+      - name: "🗑️ Uninstall Monitoring Stack (with PVC Management)"
         if: github.event.inputs.action == 'uninstall'
         run: |
           echo "🗑️ Removing Prometheus and Grafana monitoring stack..."
           echo "🎯 Environment: ${{ github.event.inputs.environment }}"
+          echo "💾 PVC Management: Enhanced cleanup with data preservation options"
           
           # Make scripts executable
           chmod +x monitoring/uninstall-monitoring.sh
@@ -287,11 +342,22 @@ jobs:
           export ENVIRONMENT="${{ github.event.inputs.environment }}"
           export CLUSTER_NAME="$EKS_CLUSTER_NAME"
           
-          # Run uninstallation script with auto-confirm
+          echo "📋 Pre-cleanup PVC Status:"
+          kubectl get pvc -n $MONITORING_NAMESPACE || echo "No PVCs found"
+          echo
+          
+          # Run uninstallation script with enhanced PVC handling
           cd monitoring
+          echo "🤖 Running automated cleanup with PVC confirmation..."
+          
+          # Auto-confirm main uninstall but let user decide on PVCs in interactive mode
+          # For CI/CD, we'll delete PVCs automatically, but show what's happening
           echo "y" | ./uninstall-monitoring.sh
           
-          echo "✅ Monitoring stack removal completed!"
+          echo "📋 Post-cleanup PVC Status:"
+          kubectl get pvc -n $MONITORING_NAMESPACE 2>/dev/null || echo "✅ No PVCs remaining (deleted or namespace removed)"
+          
+          echo "✅ Monitoring stack removal completed with PVC management!"
 
       # ---------------------------------------------------------
       # Check Monitoring Status
@@ -428,7 +494,12 @@ jobs:
           echo "🎯 Environment: ${{ github.event.inputs.environment }}"
           echo "🏷️ EKS Cluster: $EKS_CLUSTER_NAME"
           echo ""
-          echo "📊 Next Steps:"
+          echo "� Storage Information:"
+          PVC_COUNT=$(kubectl get pvc -n $MONITORING_NAMESPACE --no-headers 2>/dev/null | wc -l || echo "0")
+          echo "📊 Created $PVC_COUNT Persistent Volume Claims for data persistence"
+          kubectl get pvc -n $MONITORING_NAMESPACE -o custom-columns=NAME:.metadata.name,STATUS:.status.phase,CAPACITY:.status.capacity.storage 2>/dev/null || true
+          echo ""
+          echo "�📊 Next Steps:"
           echo "1. Access Grafana: kubectl port-forward -n $MONITORING_NAMESPACE svc/kube-prometheus-stack-grafana 3000:80"
           echo "2. Open http://localhost:3000"
           echo "3. Login with admin/[get password from secret]"
@@ -443,6 +514,16 @@ jobs:
           echo "🎯 Environment: ${{ github.event.inputs.environment }}"
           echo "🏷️ EKS Cluster: $EKS_CLUSTER_NAME"
           echo ""
+          echo "� PVC Cleanup Status:"
+          PVC_COUNT=$(kubectl get pvc -n $MONITORING_NAMESPACE --no-headers 2>/dev/null | wc -l || echo "0")
+          if [ "$PVC_COUNT" -eq 0 ]; then
+            echo "✅ All PVCs removed - monitoring data permanently deleted"
+          else
+            echo "⚠️  $PVC_COUNT PVCs preserved - monitoring data retained"
+            kubectl get pvc -n $MONITORING_NAMESPACE
+            echo "💡 To remove data: kubectl delete pvc --all -n $MONITORING_NAMESPACE"
+          fi
+          echo ""
           echo "🗑️ Removed Components:"
           echo "- Prometheus Server"
           echo "- Grafana Dashboards"
@@ -450,6 +531,7 @@ jobs:
           echo "- Node Exporter"
           echo "- kube-state-metrics"
           echo "- Prometheus Operator"
+          echo "- Custom Resource Definitions (CRDs)"
           echo ""
           echo "💡 To reinstall: Run this workflow again with action 'install'"
 
