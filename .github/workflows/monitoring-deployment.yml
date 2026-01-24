@@ -39,6 +39,11 @@ on:
         required: false
         default: '10'
         type: string
+      delete_pvcs:
+        description: 'Delete PVCs and all monitoring data (for uninstall)'
+        required: false
+        default: true
+        type: boolean
 
 # ---------------------------------------------------------
 # Environment Variables
@@ -333,7 +338,7 @@ jobs:
         run: |
           echo "🗑️ Removing Prometheus and Grafana monitoring stack..."
           echo "🎯 Environment: ${{ github.event.inputs.environment }}"
-          echo "💾 PVC Management: Enhanced cleanup with data preservation options"
+          echo "💾 PVC Management: Automated cleanup with data deletion"
           
           # Make scripts executable
           chmod +x monitoring/uninstall-monitoring.sh
@@ -342,22 +347,26 @@ jobs:
           export ENVIRONMENT="${{ github.event.inputs.environment }}"
           export CLUSTER_NAME="$EKS_CLUSTER_NAME"
           
+          # Set automation flags for cleanup
+          export AUTO_CONFIRM="true"
+          export DELETE_PVCS="${{ github.event.inputs.delete_pvcs || 'true' }}" 
+          export DELETE_NAMESPACE="true"
+          
           echo "📋 Pre-cleanup PVC Status:"
           kubectl get pvc -n $MONITORING_NAMESPACE || echo "No PVCs found"
           echo
           
-          # Run uninstallation script with enhanced PVC handling
+          # Run uninstallation script with full automation
           cd monitoring
-          echo "🤖 Running automated cleanup with PVC confirmation..."
+          echo "🤖 Running fully automated cleanup (including PVCs and namespace)..."
           
-          # Auto-confirm main uninstall but let user decide on PVCs in interactive mode
-          # For CI/CD, we'll delete PVCs automatically, but show what's happening
-          echo "y" | ./uninstall-monitoring.sh
+          ./uninstall-monitoring.sh
           
-          echo "📋 Post-cleanup PVC Status:"
-          kubectl get pvc -n $MONITORING_NAMESPACE 2>/dev/null || echo "✅ No PVCs remaining (deleted or namespace removed)"
+          echo "📋 Post-cleanup Status:"
+          kubectl get namespace $MONITORING_NAMESPACE 2>/dev/null || echo "✅ Namespace removed"
+          kubectl get pvc -n $MONITORING_NAMESPACE 2>/dev/null || echo "✅ No PVCs remaining"
           
-          echo "✅ Monitoring stack removal completed with PVC management!"
+          echo "✅ Complete monitoring stack removal with PVC cleanup completed!"
 
       # ---------------------------------------------------------
       # Check Monitoring Status

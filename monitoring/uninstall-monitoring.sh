@@ -57,14 +57,91 @@ echo "   - kube-state-metrics"
 echo "   - Prometheus Operator"
 echo
 
-# Confirmation prompt
-read -p "Are you sure you want to proceed? (y/N): " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    print_status "Uninstallation cancelled."
-    exit 0
+#!/bin/bash
+
+# =============================================================================
+# Kubernetes Monitoring Stack Uninstaller
+# =============================================================================
+# This script removes the complete Prometheus and Grafana monitoring stack
+# from your EKS cluster.
+#
+# WARNING: This will delete:
+# - All monitoring dashboards
+# - All stored metrics data
+# - All custom configurations
+# - The monitoring namespace (optional)
+#
+# Environment Variables for Automation:
+# - AUTO_CONFIRM: Set to 'true' to skip main confirmation
+# - DELETE_PVCS: Set to 'true' to automatically delete PVCs
+# - DELETE_NAMESPACE: Set to 'true' to automatically delete namespace
+# =============================================================================
+
+set -e  # Exit on any error
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Function to print colored output
+print_status() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+print_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Check for automation mode
+if [[ "${AUTO_CONFIRM}" == "true" ]]; then
+    print_status "🤖 Running in automated mode..."
+    print_status "   AUTO_CONFIRM: ${AUTO_CONFIRM:-false}"
+    print_status "   DELETE_PVCS: ${DELETE_PVCS:-false}"
+    print_status "   DELETE_NAMESPACE: ${DELETE_NAMESPACE:-false}"
+    echo
 fi
+
 echo
+print_warning "⚠️  KUBERNETES MONITORING STACK REMOVAL"
+echo
+print_warning "This will permanently delete:"
+echo "   • All Prometheus metrics data"
+echo "   • All Grafana dashboards and settings"
+echo "   • All AlertManager configurations"
+echo "   • Custom monitoring configurations"
+echo
+echo "The following components will be removed:"
+echo "   - Prometheus Server"
+echo "   - Grafana"
+echo "   - AlertManager"
+echo "   - Node Exporter"
+echo "   - kube-state-metrics"
+echo "   - Prometheus Operator"
+echo
+
+# Confirmation prompt
+if [[ "${AUTO_CONFIRM}" != "true" ]]; then
+    read -p "Are you sure you want to proceed? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        print_status "Uninstallation cancelled."
+        exit 0
+    fi
+    echo
+else
+    print_status "🤖 Auto-confirming uninstallation..."
+fi
 
 # =============================================================================
 # 1. Prerequisites Check
@@ -159,8 +236,15 @@ if [ "$PVC_COUNT" -gt 0 ]; then
     echo
     print_warning "⚠️  Deleting PVCs will permanently delete all monitoring data!"
     echo
-    read -p "Do you want to delete PVCs and all monitoring data? (y/N): " -n 1 -r
-    echo
+    
+    # Check if we should auto-delete PVCs
+    if [[ "${DELETE_PVCS}" == "true" ]]; then
+        print_status "🤖 Auto-confirming PVC deletion..."
+        REPLY="y"
+    else
+        read -p "Do you want to delete PVCs and all monitoring data? (y/N): " -n 1 -r
+        echo
+    fi
     
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         print_status "Deleting Persistent Volume Claims..."
@@ -216,8 +300,15 @@ echo
 # =============================================================================
 print_status "🗂️  Handling monitoring namespace..."
 echo
-read -p "Do you want to delete the 'monitoring' namespace? (y/N): " -n 1 -r
-echo
+
+# Check if we should auto-delete namespace
+if [[ "${DELETE_NAMESPACE}" == "true" ]]; then
+    print_status "🤖 Auto-confirming namespace deletion..."
+    REPLY="y"
+else
+    read -p "Do you want to delete the 'monitoring' namespace? (y/N): " -n 1 -r
+    echo
+fi
 
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     print_status "Deleting monitoring namespace..."
