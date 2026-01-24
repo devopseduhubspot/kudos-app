@@ -70,6 +70,40 @@ if ! kubectl cluster-info &> /dev/null; then
     exit 1
 fi
 
+# Check if EBS CSI driver is available
+print_status "🔍 Checking EBS CSI driver..."
+EBS_CSI_NODES=$(kubectl get pods -n kube-system -l app=ebs-csi-controller --no-headers 2>/dev/null | wc -l)
+if [ "$EBS_CSI_NODES" -lt 1 ]; then
+    print_warning "EBS CSI driver not found. Storage provisioning may fail."
+    print_status "The workflow should have set this up automatically."
+    
+    # Check if we're running in GitHub Actions (auto-setup should have happened)
+    if [ -n "$GITHUB_ACTIONS" ]; then
+        print_error "EBS CSI driver should have been set up by the workflow"
+        print_status "Please check the workflow logs for EBS CSI driver setup errors"
+        exit 1
+    else
+        print_status "To set up EBS CSI driver automatically, run:"
+        print_status "  chmod +x setup-ebs-csi-driver.sh && ./setup-ebs-csi-driver.sh"
+        echo
+        read -p "Do you want to continue without EBS CSI driver? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_status "Exiting. Please set up EBS CSI driver first."
+            exit 1
+        fi
+    fi
+    
+    # Check storage class
+    if ! kubectl get storageclass gp2 &> /dev/null; then
+        print_error "Storage class 'gp2' not found"
+        print_status "Persistent volumes will not work without a storage class"
+        print_status "Please check your EBS CSI driver installation"
+    fi
+else
+    print_success "EBS CSI driver found ($EBS_CSI_NODES controller pods)"
+fi
+
 print_success "All prerequisites met!"
 echo
 

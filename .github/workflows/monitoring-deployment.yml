@@ -145,6 +145,110 @@ jobs:
           echo "✅ Cluster access verification completed"
 
       # ---------------------------------------------------------
+      # Setup Prerequisites (EBS CSI Driver, OIDC, IRSA)
+      # ---------------------------------------------------------
+      - name: "🔧 Setup EBS CSI Driver with IRSA"
+        if: github.event.inputs.action == 'install'
+        run: |
+          echo "🔧 Setting up EBS CSI Driver prerequisites..."
+          
+          # Get cluster info
+          CLUSTER_NAME="$EKS_CLUSTER_NAME"
+          
+          # Get OIDC issuer URL
+          OIDC_ISSUER=$(aws eks describe-cluster --region $AWS_REGION --name $CLUSTER_NAME --query "cluster.identity.oidc.issuer" --output text)
+          OIDC_ID=$(echo $OIDC_ISSUER | cut -d'/' -f5)
+          
+          echo "✅ Cluster: $CLUSTER_NAME"
+          echo "✅ OIDC Issuer: $OIDC_ISSUER"
+          echo "✅ OIDC ID: $OIDC_ID"
+          
+          # Check if OIDC provider exists
+          echo "🔍 Checking OIDC provider..."
+          OIDC_EXISTS=$(aws iam list-open-id-connect-providers --query "OpenIDConnectProviderList[?ends_with(Arn, '$OIDC_ID')].Arn" --output text)
+          
+          if [ -z "$OIDC_EXISTS" ]; then
+            echo "📝 Creating OIDC provider..."
+            aws iam create-open-id-connect-provider \
+              --url $OIDC_ISSUER \
+              --client-id-list sts.amazonaws.com \
+              --thumbprint-list 9e99a48a9960b14926bb7f3b02e22da2b0ab7280
+            echo "✅ OIDC provider created"
+          else
+            echo "✅ OIDC provider already exists: $OIDC_EXISTS"
+          fi
+          
+          # Check if IAM role exists
+          echo "🔍 Checking EBS CSI IAM role..."
+          ROLE_EXISTS=$(aws iam get-role --role-name AmazonEKS_EBS_CSI_DriverRole --query 'Role.RoleName' --output text 2>/dev/null || echo "")
+          
+          if [ "$ROLE_EXISTS" != "AmazonEKS_EBS_CSI_DriverRole" ]; then
+            echo "📝 Creating EBS CSI IAM role..."
+            
+            # Create trust policy
+            cat > ebs-csi-trust-policy.json << EOF
+          {
+            "Version": "2012-10-17", 
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": {
+                  "Federated": "arn:aws:iam::${{ vars.AWS_ACCOUNT_ID || secrets.AWS_ACCOUNT_ID }}:oidc-provider/${OIDC_ISSUER#https://}"
+                },
+                "Action": "sts:AssumeRoleWithWebIdentity",
+                "Condition": {
+                  "StringEquals": {
+                    "${OIDC_ISSUER#https://}:sub": "system:serviceaccount:kube-system:ebs-csi-controller-sa",
+                    "${OIDC_ISSUER#https://}:aud": "sts.amazonaws.com"
+                  }
+                }
+              }
+            ]
+          }
+          EOF
+            
+            # Create role and attach policy
+            aws iam create-role --role-name AmazonEKS_EBS_CSI_DriverRole --assume-role-policy-document file://ebs-csi-trust-policy.json
+            aws iam attach-role-policy --role-name AmazonEKS_EBS_CSI_DriverRole --policy-arn arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy
+            echo "✅ EBS CSI IAM role created and policy attached"
+          else
+            echo "✅ EBS CSI IAM role already exists"
+          fi
+          
+          # Check if EBS CSI addon exists
+          echo "🔍 Checking EBS CSI addon..."
+          ADDON_STATUS=$(aws eks describe-addon --cluster-name $CLUSTER_NAME --addon-name aws-ebs-csi-driver --region $AWS_REGION --query 'addon.status' --output text 2>/dev/null || echo "NOT_FOUND")
+          
+          if [ "$ADDON_STATUS" != "ACTIVE" ]; then
+            echo "📝 Installing EBS CSI driver addon..."
+            
+            # Delete addon if it exists in failed state
+            if [ "$ADDON_STATUS" != "NOT_FOUND" ]; then
+              echo "🗑️ Removing existing addon in $ADDON_STATUS state..."
+              aws eks delete-addon --cluster-name $CLUSTER_NAME --addon-name aws-ebs-csi-driver --region $AWS_REGION
+              aws eks wait addon-deleted --cluster-name $CLUSTER_NAME --addon-name aws-ebs-csi-driver --region $AWS_REGION
+            fi
+            
+            # Install addon with IAM role
+            aws eks create-addon \
+              --cluster-name $CLUSTER_NAME \
+              --addon-name aws-ebs-csi-driver \
+              --service-account-role-arn arn:aws:iam::${{ vars.AWS_ACCOUNT_ID || secrets.AWS_ACCOUNT_ID }}:role/AmazonEKS_EBS_CSI_DriverRole \
+              --region $AWS_REGION
+            
+            echo "⏳ Waiting for EBS CSI driver to be active..."
+            timeout 300 aws eks wait addon-active --cluster-name $CLUSTER_NAME --addon-name aws-ebs-csi-driver --region $AWS_REGION
+            echo "✅ EBS CSI driver installed and active"
+          else
+            echo "✅ EBS CSI driver already active"
+          fi
+          
+          # Verify EBS CSI driver pods are running
+          echo "🔍 Verifying EBS CSI driver pods..."
+          kubectl get pods -n kube-system -l app=ebs-csi-controller
+          echo "✅ EBS CSI driver setup completed"
+
+      # ---------------------------------------------------------
       # Install Monitoring Stack
       # ---------------------------------------------------------
       - name: "📦 Install Monitoring Stack"

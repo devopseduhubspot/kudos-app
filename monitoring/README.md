@@ -40,16 +40,51 @@ Grafana is a visualization and analytics platform that:
                        └──────────────────┘
 ```
 
+## 🔧 Automated Prerequisites Setup
+
+The GitHub Actions workflow automatically handles:
+
+### ✅ **EBS CSI Driver with IRSA**
+- **OIDC Identity Provider**: Creates OpenID Connect provider for your EKS cluster
+- **IAM Role**: Creates `AmazonEKS_EBS_CSI_DriverRole` with proper trust policy
+- **Service Account**: Configures IRSA (IAM Roles for Service Accounts)
+- **EBS CSI Addon**: Installs AWS EBS CSI driver addon with IAM role
+
+### ✅ **Persistent Volume Support**
+- **Storage Class**: Ensures `gp2` storage class is available
+- **Volume Provisioning**: Enables dynamic PV provisioning for Prometheus & Grafana
+- **EBS Volume Management**: Automatic EBS volume lifecycle management
+
+### ✅ **Manual Setup Option**
+If running outside GitHub Actions, use the dedicated setup script:
+```bash
+./setup-ebs-csi-driver.sh
+```
+
 ## 🚀 Quick Start
 
 ### Prerequisites
 - EKS cluster running
 - `kubectl` configured
 - `helm` installed
+- **EBS CSI Driver** (automatically set up by GitHub Actions workflow)
 
 ### 1. Install Monitoring Stack
+
+**Option A: Using GitHub Actions (Recommended)**
 ```bash
-# Make script executable and run
+# Go to GitHub → Actions → "Deploy Monitoring Stack" workflow
+# Select environment and action: install
+# The workflow automatically handles all prerequisites including EBS CSI driver
+```
+
+**Option B: Manual Installation**
+```bash
+# If EBS CSI driver is not set up, run this first:
+chmod +x setup-ebs-csi-driver.sh
+./setup-ebs-csi-driver.sh
+
+# Then install monitoring stack:
 chmod +x install-monitoring.sh
 ./install-monitoring.sh
 ```
